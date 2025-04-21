@@ -1,0 +1,328 @@
+---
+title: "Master's Thesis: Simulations"
+author: "Ryo Mishima"
+date: "`r format(Sys.time(), '%Y/%m/%d')`"
+output:
+  ## HTML
+  distill::distill_article:
+    toc: true
+    toc_depth: 2
+    md_extensions: -ascii_identifiers
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  out.width = "\\textwidth", fig.align = "center", fig.pos = "t")
+
+# 表示桁数
+options(digits=3)
+
+library(dplyr)
+
+# フォント周り
+library(systemfonts)
+family_sans  <- "MS Gothic"  ## "Noto Sans CJK JP"
+family_serif <- "MS Mincho"  ## "Noto Serif JP"
+
+options(knitr.duplicate.label = 'allow')
+```
+
+```{r, include=FALSE}
+# (1) For dataframes
+# PSM, CEM, CART, RF, MRT
+# Do the following:
+# ・Remove the sequential numbers in leftmost column
+# ・Convert to comma-separated format
+# Align values vertically in each column, and add commas at the end of all lines except the last one.
+
+# (2) For dataframes
+# Var.Imp.CART, Var.Imp.MRT
+# Do the following:
+# Remove the sequential numbers on the left, and replace them with numbers 10,8,6,5,4,3,2,1
+# Align values vertically in each column, and add commas at the end of all lines except the last one.
+```
+
+```{r}
+PSM = matrix(c(
+  300, 0.100, 297, 0.165, 0.246, 2.390, 0.947, 0.140, 0,
+  300, 0.050, 293, 0.161, 0.231, 1.449, 0.928, 0.126, 0,
+  300, 0.025, 283, 0.162, 0.221, 1.055, 0.928, 0.097, 0,
+  300, 0.020, 278, 0.158, 0.216, 0.999, 0.918, 0.090, 0,
+  300, 0.010, 246, 0.136, 0.202, 0.908, 0.936, 0.075, 0,
+  300, 0.008, 230, 0.123, 0.194, 0.907, 0.942, 0.071, 0,
+  300, 0.005, 190, 0.102, 0.192, 0.949, 0.953, 0.078, 0,
+  300, 0.004, 169, 0.087, 0.191, 0.989, 0.962, 0.083, 0
+), nrow=8, byrow=TRUE)
+
+colnames(PSM) = c("Total", "Caliper", "N", "Bias", "RMSE", "Width.CI", "Coverage", "EDA.range", "Fail")
+```
+
+```{r}
+CEM = matrix(c(
+  300, 10, 36.9, 0.108, 0.379, 1.81, 0.908, 0.165, 0
+), nrow=1, byrow=TRUE)
+
+colnames(CEM) = c("Total", "N.var", "N", "Bias", "RMSE", "Width.CI", "Coverage", "EDA.range", "Fail")
+```
+
+```{r}
+CART = matrix(c(
+  300, 10, 294, 0.166, 0.228, 1.172, 0.908, 0.143, 0,
+  300,  8, 290, 0.161, 0.220, 1.064, 0.911, 0.130, 0,
+  300,  6, 280, 0.152, 0.212, 0.959, 0.918, 0.115, 0,
+  300,  5, 271, 0.149, 0.210, 0.918, 0.918, 0.107, 0,
+  300,  4, 256, 0.138, 0.201, 0.882, 0.931, 0.098, 0,
+  300,  3, 231, 0.128, 0.197, 0.851, 0.934, 0.094, 0,
+  300,  2, 183, 0.107, 0.197, 0.868, 0.928, 0.091, 0
+), nrow=7, byrow=TRUE)
+
+colnames(CART) = c("Total", "min.bucket", "N", "Bias", "RMSE", "Width.CI", "Coverage", "EDA.range", "Fail")
+```
+
+```{r}
+RF = matrix(c(
+  300,  2, 299, 0.312, 0.348, 1.730, 0.780, 0.215, 0,
+  300,  3, 286, 0.281, 0.321, 1.136, 0.786, 0.201, 0,
+  300,  4, 275, 0.238, 0.284, 1.077, 0.845, 0.198, 0,
+  300,  5, 243, 0.170, 0.235, 0.956, 0.879, 0.137, 0,
+  300,  6, 234, 0.165, 0.234, 0.951, 0.882, 0.136, 0,
+  300,  7, 216, 0.156, 0.228, 0.944, 0.900, 0.129, 0,
+  300,  8, 195, 0.145, 0.224, 0.959, 0.917, 0.120, 0,
+  300,  9, 184, 0.140, 0.224, 0.967, 0.913, 0.120, 0,
+  300, 10, 159, 0.128, 0.232, 1.017, 0.929, 0.120, 0
+), nrow=9, byrow=TRUE)
+
+colnames(RF) = c("Total", "num.trees", "N", "Bias", "RMSE", "Width.CI", "Coverage", "EDA.range", "Fail")
+```
+
+```{r}
+MRT = matrix(c(
+  300, 10, 295, 0.225, 0.277, 1.196, 0.863, 0.169, 0,
+  300,  8, 292, 0.215, 0.264, 1.083, 0.855, 0.158, 0,
+  300,  6, 284, 0.212, 0.260, 0.990, 0.870, 0.147, 0,
+  300,  5, 278, 0.207, 0.256, 0.976, 0.854, 0.141, 0,
+  300,  4, 267, 0.195, 0.247, 0.945, 0.879, 0.135, 0,
+  300,  3, 249, 0.185, 0.240, 0.906, 0.888, 0.121, 0,
+  300,  2, 220, 0.170, 0.235, 0.902, 0.895, 0.123, 0,
+  300,  1, 170, 0.155, 0.233, 0.967, 0.911, 0.119, 0
+), nrow=8, byrow=TRUE)
+
+colnames(MRT) = c("Total", "min.bucket", "N", "Bias", "RMSE", "Width.CI", "Coverage", "EDA.range", "Fail")
+```
+
+```{r}
+# SIRUS = matrix(c(
+
+# ), nrow=9) %>% t()
+# 
+# colnames(SIRUS)=c("Total","num.rules","N","Bias","RMSE","Width.CI","Coverage","EDA.range","Fail")
+```
+
+```{r}
+Var.Imp.CART = matrix(c(
+  10, 1.86, 0.415, 0.138, 2.09, 0.612, 0.199, 0.130, 0.134, 0.147, 0.132,
+   8, 1.88, 0.434, 0.149, 2.07, 0.607, 0.200, 0.132, 0.135, 0.148, 0.134,
+   6, 1.90, 0.467, 0.160, 2.06, 0.600, 0.202, 0.133, 0.137, 0.151, 0.135,
+   5, 1.91, 0.482, 0.168, 2.05, 0.594, 0.201, 0.133, 0.137, 0.151, 0.134,
+   4, 1.92, 0.495, 0.178, 2.04, 0.590, 0.201, 0.133, 0.138, 0.151, 0.133,
+   3, 1.92, 0.508, 0.189, 2.03, 0.583, 0.199, 0.132, 0.137, 0.150, 0.133,
+   2, 1.92, 0.519, 0.198, 2.02, 0.577, 0.198, 0.131, 0.135, 0.148, 0.132,
+   1, 1.92, 0.519, 0.198, 2.02, 0.577, 0.198, 0.131, 0.135, 0.148, 0.132
+), nrow=8, byrow=TRUE)
+
+colnames(Var.Imp.CART) = c("min.bucket", "X01", "X02", "X03", "X04", "X05", "X06", "X07", "X08", "X09", "X10")
+```
+
+
+```{r}
+Var.Imp.MRT = matrix(c(
+  10, 0.753, 0.208, 0.075, 1.17, 0.307, 0.107, 0.058, 0.059, 0.071, 0.061,
+   8, 0.814, 0.225, 0.083, 1.22, 0.321, 0.112, 0.062, 0.063, 0.075, 0.064,
+   6, 0.888, 0.245, 0.092, 1.27, 0.333, 0.117, 0.065, 0.067, 0.079, 0.068,
+   5, 0.931, 0.258, 0.098, 1.29, 0.340, 0.120, 0.067, 0.069, 0.081, 0.069,
+   4, 0.976, 0.271, 0.105, 1.32, 0.345, 0.122, 0.069, 0.071, 0.083, 0.071,
+   3, 1.024, 0.286, 0.113, 1.34, 0.349, 0.124, 0.071, 0.072, 0.084, 0.073,
+   2, 1.070, 0.303, 0.123, 1.36, 0.352, 0.125, 0.072, 0.074, 0.086, 0.074,
+   1, 1.112, 0.321, 0.134, 1.38, 0.353, 0.125, 0.073, 0.074, 0.086, 0.074
+), nrow=8, byrow=TRUE)
+
+colnames(Var.Imp.MRT) = c("min.bucket", "X01", "X02", "X03", "X04", "X05", "X06", "X07", "X08", "X09", "X10")
+```
+
+```{r}
+# Make a basic graph
+plot( PSM[,"Bias"] ~ PSM[,"N"],        type="b", col="orange",     lwd=3, pch=15, 
+      bty="l", xlab="Number at analysis", ylab="Bias", xlim=c(300, 0), ylim=c(-0.2, 0.4) )
+lines(CART[,"Bias"] ~ CART[,"N"],      type="b", col="skyblue",    lwd=3, pch=16)
+lines(RF[,"Bias"] ~ RF[,"N"],          type="b", col="lightgreen", lwd=3, pch=17)
+lines(MRT[,"Bias"] ~ MRT[,"N"],  type="b", col="seagreen",      lwd=3, pch=18)
+# lines(SIRUS[,"Bias"] ~ SIRUS[,"N"],    type="b", col="seagreen",   lwd=3, pch=19)
+abline(h=0, col="gray", lwd=3, lty=2)
+
+points(CEM[,"N"], CEM[,"Bias"], type="p", col="blue", cex=2, pch=4)
+ 
+# Add a legend
+legend("bottomleft", xpd=TRUE,
+  legend = c("PSM", "CEM", "CART", "RF", "MRT"), #, "SIRUS"), 
+  col = c("orange", "blue", "skyblue", "lightgreen","seagreen"), #,"seagreen"),
+  pch = c(15, 4, 17, 18, 19), 
+  bty = "n", 
+  pt.cex = 1.5,
+  text.col = "black", 
+  horiz = TRUE, 
+  inset = c(0.1, 0.1, 0.1, 0.1, 0.1))
+
+title("(a)", line = -0.5)
+```
+
+```{r}
+# Make a basic graph
+plot( PSM[,"Width.CI"] ~ PSM[,"N"],        type="b", col="orange",     lwd=3, pch=15, 
+      bty="l", xlab="Number at analysis", ylab="Width.CI", xlim=c(300, 0), ylim=c(0, 5) )
+lines(CART[,"Width.CI"] ~ CART[,"N"],      type="b", col="skyblue",    lwd=3, pch=16)
+lines(RF[,"Width.CI"] ~ RF[,"N"],          type="b", col="lightgreen", lwd=3, pch=17)
+lines(MRT[,"Width.CI"] ~ MRT[,"N"],  type="b", col="seagreen",      lwd=3, pch=18)
+# lines(SIRUS[,"Width.CI"] ~ SIRUS[,"N"],    type="b", col="seagreen",   lwd=3, pch=19)
+abline(h=0, col="gray", lwd=3, lty=2)
+
+points(CEM[,"N"], CEM[,"Width.CI"], type="p", col="blue", cex=2, pch=4)
+ 
+# Add a legend
+legend("topleft", xpd=TRUE,
+  legend = c("PSM", "CEM", "CART", "RF", "MRT"), #, "SIRUS"), 
+  col = c("orange", "blue", "skyblue", "lightgreen","seagreen"), #,"seagreen"),
+  pch = c(15, 4, 17, 18, 19), 
+  bty = "n", 
+  pt.cex = 1.5,
+  text.col = "black", 
+  horiz = TRUE, 
+  inset = c(0.1, 0.1, 0.1, 0.1, 0.1))
+
+title("(b)", line = -0.5)
+```
+
+```{r}
+# Make a basic graph
+plot( PSM[,"RMSE"] ~ PSM[,"N"],        type="b", col="orange",     lwd=3, pch=15, 
+      bty="l", xlab="Number at analysis", ylab="RMSE", xlim=c(300, 0), ylim=c(0,0.5) )
+lines(CART[,"RMSE"] ~ CART[,"N"],      type="b", col="skyblue",    lwd=3, pch=16)
+lines(RF[,"RMSE"] ~ RF[,"N"],          type="b", col="lightgreen", lwd=3, pch=17)
+lines(MRT[,"RMSE"] ~ MRT[,"N"],  type="b", col="seagreen",      lwd=3, pch=18)
+# lines(SIRUS[,"RMSE"] ~ SIRUS[,"N"],    type="b", col="seagreen",   lwd=3, pch=19)
+abline(h=0, col="gray", lwd=3, lty=2)
+
+points(CEM[,"N"], CEM[,"RMSE"], type="p", col="blue", cex=2, pch=4)
+ 
+# Add a legend
+legend("bottomleft", xpd=TRUE,
+  legend = c("PSM", "CEM", "CART", "RF", "MRT"), #, "SIRUS"), 
+  col = c("orange", "blue", "skyblue", "lightgreen","seagreen"), #,"seagreen"),
+  pch = c(15, 4, 17, 18, 19), 
+  bty = "n", 
+  pt.cex = 1.5,
+  text.col = "black", 
+  horiz = TRUE, 
+  inset = c(0.1, 0.1, 0.1, 0.1, 0.1))
+
+title("(c)", line = -0.5)
+```
+
+```{r}
+# Make a basic graph
+plot( PSM[,"Coverage"] ~ PSM[,"N"],        type="b", col="orange",     lwd=3, pch=15, 
+      bty="l", xlab="Number at analysis", ylab="Coverage", xlim=c(300, 0), ylim=c(0.7,1.0) )
+lines(CART[,"Coverage"] ~ CART[,"N"],      type="b", col="skyblue",    lwd=3, pch=16)
+lines(RF[,"Coverage"] ~ RF[,"N"],          type="b", col="lightgreen", lwd=3, pch=17)
+lines(MRT[,"Coverage"] ~ MRT[,"N"],  type="b", col="seagreen",      lwd=3, pch=18)
+# lines(SIRUS[,"Coverage"] ~ SIRUS[,"N"],    type="b", col="seagreen",   lwd=3, pch=19)
+abline(h=0.95, col="gray", lwd=3, lty=2)
+
+points(CEM[,"N"], CEM[,"Coverage"], type="p", col="blue", cex=2, pch=4)
+ 
+# Add a legend
+legend("bottomleft", xpd=TRUE,
+  legend = c("PSM", "CEM", "CART", "RF", "MRT"), #, "SIRUS"), 
+  col = c("orange", "blue", "skyblue", "lightgreen","seagreen"), #,"seagreen"),
+  pch = c(15, 4, 17, 18, 19), 
+  bty = "n", 
+  pt.cex = 1.5,
+  text.col = "black", 
+  horiz = TRUE, 
+  inset = c(0.1, 0.1, 0.1, 0.1, 0.1))
+
+
+title("(d)", line = -0.5)
+```
+
+```{r}
+# Make a basic graph
+plot( PSM[,"EDA.range"] ~ PSM[,"N"],        type="b", col="orange",     lwd=3, pch=15, 
+      bty="l", xlab="Number at analysis", ylab="range for exploratory", xlim=c(300, 150), ylim=c(0,0.4) )
+lines(CART[,"EDA.range"] ~ CART[,"N"],      type="b", col="skyblue",    lwd=3, pch=16)
+lines(RF[,"EDA.range"] ~ RF[,"N"],          type="b", col="lightgreen", lwd=3, pch=17)
+lines(MRT[,"EDA.range"] ~ MRT[,"N"],  type="b", col="seagreen",      lwd=3, pch=18)
+# lines(SIRUS[,"EDA.range"] ~ SIRUS[,"N"],    type="b", col="seagreen",   lwd=3, pch=19)
+abline(h=0.0, col="gray", lwd=3, lty=2)
+
+# points(CEM[,"N"], CEM[,"EDA.range"], type="p", col="blue", cex=2, pch=4)
+ 
+# Add a legend
+legend("topleft", xpd=TRUE,
+  legend = c("PSM", "CART", "RF", "MRT"), #, "SIRUS"), 
+  col = c("orange", "skyblue", "lightgreen","seagreen"), #,"seagreen"),
+  pch = c(15, 17, 18, 19), 
+  bty = "n", 
+  pt.cex = 1.5,
+  text.col = "black", 
+  horiz = TRUE, 
+  inset = c(0.1, 0.1, 0.1, 0.1))
+
+title("(e)", line = -0.5)
+```
+
+```{r}
+# データを長形式に変換
+require(tidyr)
+Var.Imp.CART_long <- Var.Imp.CART %>%
+  as.data.frame() %>%
+  filter(min.bucket==10) %>% 
+  select(-min.bucket) %>%
+  gather(key = "Variable", value = "Value") %>%
+  mutate(Method = "CART")
+
+Var.Imp.MRT_long <- Var.Imp.MRT %>%
+  as.data.frame() %>%
+  filter(min.bucket==10) %>% 
+  select(-min.bucket) %>%
+  gather(key = "Variable", value = "Value") %>%
+  mutate(Method = "MRT")
+
+# データを結合
+combined_data <- rbind(Var.Imp.CART_long, Var.Imp.MRT_long)
+
+# プロット作成
+require(ggplot2)
+ggplot(combined_data, aes(x = Variable, y = Value, fill = Method)) +
+geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+theme_minimal() +
+labs(
+  x = "Variables",
+  y = "Variance of Variable Importance"
+  #title = "Variance of Variable Importance: CART vs MRT"
+) +
+scale_fill_manual(values = c("CART" = "skyblue", "MRT" = "seagreen")) +
+theme(
+  axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+  axis.text.y = element_text(size = 12),
+  legend.position = c(0.85, 0.85),
+  legend.text = element_text(size = 12),
+  legend.title = element_text(size = 14),
+  axis.title.x = element_text(size = 14),
+  axis.title.y = element_text(size = 14)
+  # panel.grid.major = element_line(color = "#CCCCCC"),
+  # panel.grid.minor = element_line(color = "#EEEEEE"),
+  # plot.background = element_rect(fill = "white"),
+  # legend.background = element_rect(fill = "white")
+)
+
