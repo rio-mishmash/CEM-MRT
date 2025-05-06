@@ -1,0 +1,146 @@
+---
+title: "CEM+MRT"
+subtitle: "PSM"
+author: "Ryo Mishima"
+date: "`r format(Sys.time(), '%Y/%m/%d')`"
+output:
+  ## HTML
+  distill::distill_article:
+    toc: true
+    toc_depth: 2
+    md_extensions: -ascii_identifiers
+---
+
+```{r setup, include=FALSE}
+# Set global options
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  out.width = "\\textwidth", fig.align = "center", fig.pos = "t")
+options(digits=3)
+options(knitr.duplicate.label = 'allow')
+
+# Load required libraries
+library(systemfonts)
+library(dplyr)
+library(knitr)
+library(tidyverse)
+library(tictoc)
+library(MatchIt)
+
+# Set font families
+family_sans  <- "MS Gothic"  ## "Noto Sans CJK JP"
+family_serif <- "MS Mincho"  ## "Noto Serif JP"
+```
+
+# PSM
+```{r}
+f_PSM = function(df, arm, cov_list, caliper){
+  # Initialize data
+  SimData = df
+  N.obs   = nrow(SimData)
+  N.var   = length(cov_list)
+  P.trt   = nrow(SimData[SimData[,arm]==1,]) / nrow(SimData) # marginal prob of treatment
+  formula = eval(parse(text=paste(arm, "~", paste(cov_list, collapse = " + "))))
+  
+  # Step 1: Estimate propensity score
+  m_PS = glm(formula, family=binomial(link="logit"), data=SimData, control=glm.control(maxit=1e+3))
+  SimData = SimData %>% mutate(
+    est.PS = predict(m_PS, SimData) %>% invlogit() %>% as.vector(),
+    mesh = cut(est.PS, breaks=seq(0, 1, caliper))
+  )
+  
+  # Step 2: Matching
+  Matched.Data = data.frame()
+  tryCatch({
+      Matching =
+        matchit(Z ~ mesh, data = SimData, 
+                method="exact", estimand="ATE", k2k=FALSE,
+                seed=2024)
+      
+      Matched.Data = Matching %>% 
+        match.data(object=., data=SimData) %>% 
+        group_by(subclass) %>%
+        mutate(
+          n.sub = n(),
+          n.sub.trt = sum(Z),
+          PS.sub = n.sub.trt / n.sub,
+          Wgt = if_else(Z==1, P.trt/PS.sub, (1-P.trt)/(1-PS.sub))
+        ) %>%
+        filter(PS.sub!=0 & PS.sub!=1) %>%
+        ungroup()
+      
+      Matched.Data = Matched.Data[order(Matched.Data$subclass),] # sort
+    },
+    error = function(e) {
+      # Handle case where no units were matched
+    },
+    finally = {
+      return(list(Matched.Data))
+    },
+    silent = TRUE
+  )
+}
+```
+
+# Execution
+
+```{r}
+f_EXEC = function(caliper, data=SimDatas){
+  # Get covariates
+  cov_list = data %>% select(starts_with("X")) %>% colnames()
+  
+  # Initialize parallel processing
+  cluster=f_doParallel(0.9)
+  
+  # Perform matching
+  Inferences = foreach(i=unique(data$Sim), .combine="rbind", 
+                    .packages=c("dplyr","knitr","tidyr","tidyselect","tidyverse",
+                              "LaplacesDemon","mnorm","MatchIt","geepack","marginaleffects"),
+                    .export=c("f_PSM","f_Inference")) %dopar% {
+    
+    # Matching
+    Matching <- do.call(rbind, lapply(seq(length(caliper)), function(j) 
+      f_PSM(data %>% filter(Sim==i), arm="Z", cov_list=cov_list, caliper=caliper[j])
+    ))
+    
+    # Inference
+    Inference <- do.call(rbind, lapply(seq(length(caliper)), function(k)
+      Matching[k,1] %>% as.data.frame() %>% 
+      f_Inference(df=., family=gaussian, cov_list=cov_list) %>% 
+      mutate(caliper=caliper[k])
+    ))
+  }
+  
+  stopCluster(cl=cluster)
+
+  # Calculate results
+  Results <- do.call(rbind, lapply(seq(length(caliper)), function(m)
+    data.frame(
+      Total    = max(data$Subj),
+      caliper  = caliper[m],
+      # N.class  = Inferences %>% filter(caliper==caliper[m]) %>% .$N.class %>% mean(na.rm=TRUE),
+      N        = Inferences %>% filter(caliper==caliper[m]) %>% .$N   %>% mean(na.rm=TRUE),
+      Bias     = Inferences %>% filter(caliper==caliper[m]) %>% .$Gap %>% mean(na.rm=TRUE),
+      # EmpSE    = Inferences %>% filter(caliper==caliper[m]) %>% .$Gap %>% sd(na.rm=TRUE),
+      RMSE     = Inferences %>% filter(caliper==caliper[m]) %>% .$Gap.2 %>% mean(na.rm=TRUE) %>% sqrt(),
+      Width.CI = Inferences %>% filter(caliper==caliper[m]) %>% .$Width.CI %>% mean(na.rm=TRUE),
+      Cover    = Inferences %>% filter(caliper==caliper[m]) %>% .$Coverage %>% mean(na.rm=TRUE),
+      EDA      = Inferences %>% filter(caliper==caliper[m]) %>% .$EDA.range %>% mean(na.rm=TRUE),
+      Fail     = Inferences %>% filter(caliper==caliper[m]) %>% .$Gap %>% is.na() %>% sum()
+    )
+  )) %>% round(digits=4)
+  
+  return(list(Results))
+}
+```
+
+```{r}
+f_EXEC(caliper=c(0.10, 0.05, 0.02, 0.01, 0.005, 0.003, 0.002, 0.001))
+```
+
+
+```{r, include=FALSE}
+# Signal completion
+require(beepr)
+beep(sound = 2, expr = NULL)
+```

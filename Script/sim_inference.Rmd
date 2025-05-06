@@ -1,0 +1,149 @@
+---
+title: "CEM+MRT"
+subtitle: "Inference"
+author: "Ryo Mishima"
+date: "`r format(Sys.time(), '%Y/%m/%d')`"
+output:
+  distill::distill_article:
+    toc: true
+    toc_depth: 2
+    md_extensions: -ascii_identifiers
+---
+
+```{r setup, include=FALSE}
+# Set global knitr options
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  warning = FALSE, 
+  message = FALSE,
+  out.width = "\\textwidth", 
+  fig.align = "center", 
+  fig.pos = "t"
+)
+
+# Set display digits
+options(digits = 3)
+
+# Set fonts
+library(systemfonts)
+family_sans  <- "MS Gothic"  
+family_serif <- "MS Mincho"  
+
+# Load data analysis libraries
+library(dplyr)
+library(knitr)
+library(tidyverse)
+
+# Load GEE and Marginal Effects libraries
+library(geepack)
+library(marginaleffects)
+
+# Allow duplicate chunk labels
+options(knitr.duplicate.label = 'allow')
+```
+
+```{r}
+f_Inference = function(df, family, cov_list=NULL){
+  
+  # Function for GEE analysis and marginal effects calculation
+  f_GEE = function(formula){
+    # Calculate GEE models with different correlation structures
+    
+    ## Independence correlation
+    gee_id <- eval(parse(text=paste(formula))) %>%
+      geeglm(.,
+             data = df,
+             id = subclass,
+             family = family,
+             corstr = "independence",
+             std.err = "san.se")
+             #control = geese.control(epsilon=1e-4, maxit=1e+2))
+
+    Coef_id <- gee_id %>%
+      avg_comparisons(variables = "Z", vcov = ~subclass) %>%
+      tidy()
+  
+    ## Exchangeable correlation
+    gee_cs <- eval(parse(text=paste(formula))) %>%
+      geeglm(., 
+             data = df, 
+             id = subclass, 
+             family = family, 
+             corstr = "exchangeable",  
+             std.err = "san.se")
+             #control = geese.control(epsilon=1e-4, maxit=1e+2))
+
+    
+    Coef_cs <- gee_cs %>%
+      avg_comparisons(variables = "Z", vcov = ~subclass) %>% 
+      tidy()
+  
+    # Select coefficient based on standard error
+    Coef <- if(Coef_cs$std.error < Coef_id$std.error) Coef_cs else Coef_id
+    
+    return(Coef)
+  }
+
+  # Initialize results dataframe
+  Result = rep(NA, 10) %>% 
+    t() %>% 
+    as.data.frame()
+  
+  colnames(Result) = c("N", "N.class", "Estimate", "Gap", "Gap.2",
+                      "Conf.low", "Conf.high", "Width.CI", "Coverage", "EDA.range")
+
+  tryCatch({
+    # Sort data by Z and subclass
+    df = df %>% 
+      .[order(.$Z),] %>% 
+      .[order(.$subclass),]
+
+    # Get unique subclass list
+    list.subclass = df$subclass %>% 
+      as.data.frame() %>% 
+      unique() %>% 
+      .[order(.$.),] %>% 
+      as.vector()
+  
+    # Calculate base model
+    Coef = f_GEE("Y ~ Z + est.PS")
+    
+    # Calculate models with covariates
+    Coefs_exploratory <- do.call(rbind, 
+      lapply(seq(1, length(cov_list)), function(i) {
+        tryCatch({
+          Coef_01 = f_GEE(paste("Y ~ Z + ", paste(cov_list[i], collapse="+")))
+          return(rbind(Coef_01))
+        },
+        error = function(e) {},
+        finally = {},
+        silent = TRUE
+        )
+      })
+    )
+
+    # Compile results
+    Result = data.frame(
+      N           = df %>% nrow(),
+      N.class     = df %>% group_by(subclass) %>% slice(.,1) %>% nrow(),
+      Estimate    = Coef$estimate,
+      Gap         = Coef$estimate - mean(df$TE),
+      Gap.2       = (Coef$estimate - mean(df$TE))**2,
+      Conf.low    = Coef$conf.low,
+      Conf.high   = Coef$conf.high,
+      Width.CI    = Coef$conf.high - Coef$conf.low,
+      Coverage    = if_else(mean(df$TE) >= Coef$conf.low & 
+                           mean(df$TE) <= Coef$conf.high, 1, 0),
+      EDA.range   = if_else(nrow(Coefs_exploratory)>0,
+                    max(Coefs_exploratory$estimate) - min(Coefs_exploratory$estimate), 
+                    NA)
+    )
+  },
+  error = function(e) {},
+  finally = {},
+  silent = TRUE
+  )
+
+  return(Result)
+}
+```

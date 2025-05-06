@@ -1,0 +1,216 @@
+---
+title: "CEM+MRT"
+subtitle: "CART"
+author: "Ryo Mishima"
+date: "`r format(Sys.time(), '%Y/%m/%d')`"
+output:
+  ## HTML
+  distill::distill_article:
+    toc: true
+    toc_depth: 2
+    md_extensions: -ascii_identifiers
+---
+
+```{r setup, include=FALSE}
+# Set global options
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  out.width = "\\textwidth", fig.align = "center", fig.pos = "t"
+)
+
+# Set number of digits for display
+options(digits=3)
+
+# Font settings
+library(systemfonts)
+family_sans  <- "MS Gothic"  ## "Noto Sans CJK JP"
+family_serif <- "MS Mincho"  ## "Noto Serif JP"
+
+# Load required packages for data analysis
+library(dplyr)
+library(knitr)
+library(tidyverse)
+library(MatchIt)  # for matching
+library(ranger)   # for random forest
+library(tictoc)   # for timing
+
+# Allow duplicate chunk labels
+options(knitr.duplicate.label = 'allow')
+```
+
+# CART
+```{r}
+f_CART = function(df, arm, cov_list, min.bucket) {
+  
+  # proportion -> size
+  if (min.bucket<1) {
+    min.bucket = ceiling( nrow(df)*min.bucket )
+  }
+  
+  # Initialize data
+  SimData = df
+  N.obs   = nrow(SimData)
+  N.var   = length(cov_list)
+  P.trt   = nrow(SimData[SimData[,arm]==1,]) / nrow(SimData) # marginal prob of treatment
+  formula = eval(parse(text=paste(arm, "~", paste(cov_list, collapse = " + "))))
+  
+  # Step 1: Estimate propensity score
+  m_PS = glm(formula, 
+             family=binomial(link="logit"), 
+             data=SimData, 
+             control=glm.control(maxit=1e+3))
+
+  SimData = SimData %>% 
+    mutate(
+      est.PS = predict(m_PS, SimData) %>% invlogit() %>% as.vector(),
+      est.logitPS = predict(m_PS, SimData) %>% as.vector()
+    )
+
+  # Step 2: Build CART
+  # Prepare training data
+  Training = SimData
+  Training[,cov_list] = floor(SimData[, cov_list]*2)/2
+  
+  formula = eval(parse(text=paste("est.PS ~", paste(cov_list, collapse = " + "))))
+
+  # Fit CART model
+  CART = ranger(formula, 
+                data = Training,
+                probability = FALSE, 
+                classification = FALSE, 
+                splitrule = "variance", 
+                importance = "impurity",
+                num.trees = 1, 
+                mtry = N.var, 
+                replace = FALSE, 
+                sample.fraction = 1,
+                min.node.size = 1, 
+                min.bucket = min.bucket, 
+                max.depth = NULL,
+                oob.error = FALSE, 
+                write.forest = TRUE, 
+                seed = 2024)
+
+  # Calculate variable importance
+  Var.Imp = CART$variable.importance
+
+  # Create mesh groups
+  SimData = SimData %>% 
+    mutate(
+      mesh = predict(object=CART, data=SimData, type="terminalNodes")$predictions %>% 
+             apply(., 1, function(row) paste(row, collapse = "")) %>% 
+             as.factor()
+    )
+  
+  # Perform matching
+  Matched.Data = data.frame()
+  tryCatch({
+    Matching = matchit(Z ~ mesh, 
+                      data = SimData, 
+                      method="exact", 
+                      estimand="ATE", 
+                      k2k=FALSE,
+                      seed=2024)
+    
+    Matched.Data = Matching %>% 
+      match.data(object=., data=SimData) %>% 
+      group_by(subclass) %>%
+      mutate(
+        n.sub = n(),
+        n.sub.trt = sum(Z),
+        PS.sub = n.sub.trt / n.sub,
+        Wgt = if_else(Z==1, P.trt/PS.sub, (1-P.trt)/(1-PS.sub))
+      ) %>%
+      filter(PS.sub!=0 & PS.sub!=1) %>%
+      ungroup()
+    
+    Matched.Data = Matched.Data[order(Matched.Data$subclass),] # sort
+  },
+  error = function(e) {
+    # Handle case when no units are matched
+  },
+  finally = {
+    return(list(Matched.Data, CART, Var.Imp))
+  },
+  silent = TRUE)
+}
+```
+
+# Execution
+```{r}
+f_EXEC = function(min.bucket, data=SimDatas) {
+  # Get covariate list
+  cov_list = data %>% select(starts_with("X")) %>% colnames()
+
+  # Setup parallel processing
+  cluster = f_doParallel(0.9)
+  
+  # Perform matching for each simulation
+  Inferences = foreach(i=unique(data$Sim), 
+                      .combine="rbind", 
+                      .packages=c("dplyr","knitr","tidyr","tidyselect","tidyverse",
+                                "LaplacesDemon","mnorm","MatchIt","ranger",
+                                "geepack","marginaleffects"),
+                      .export=c("f_CART","f_Inference")) %dopar% {
+    
+    # Matching step
+    Matching <- do.call(rbind, 
+      lapply(seq(length(min.bucket)), function(j) 
+        f_CART(data %>% filter(Sim==i), 
+               arm="Z", 
+               cov_list=cov_list, 
+               min.bucket=min.bucket[j])
+    ))
+    
+    # Inference step
+    Inference <- do.call(rbind, 
+      lapply(seq(length(min.bucket)), function(k)
+        Matching[k,1] %>% 
+        as.data.frame() %>% 
+        f_Inference(df=., family=gaussian, cov_list=cov_list) %>% 
+        cbind(t(as.data.frame(Matching[k,3][[1]]))) %>%
+        mutate(min.bucket=min.bucket[k])
+    ))
+  }
+  
+  stopCluster(cl=cluster)
+
+  # Compile results
+  Results <- do.call(rbind, 
+    lapply(seq(length(min.bucket)), function(m)
+      data.frame(
+        Total = max(data$Subj),
+        min.bucket = min.bucket[m],
+        N = Inferences %>% filter(min.bucket==min.bucket[m]) %>% .$N %>% mean(na.rm=TRUE),
+        Bias = Inferences %>% filter(min.bucket==min.bucket[m]) %>% .$Gap %>% mean(na.rm=TRUE),
+        RMSE = Inferences %>% filter(min.bucket==min.bucket[m]) %>% .$Gap.2 %>% mean(na.rm=TRUE) %>% sqrt(),
+        Width.CI = Inferences %>% filter(min.bucket==min.bucket[m]) %>% .$Width.CI %>% mean(na.rm=TRUE),
+        Cover = Inferences %>% filter(min.bucket==min.bucket[m]) %>% .$Coverage %>% mean(na.rm=TRUE),
+        EDA = Inferences %>% filter(min.bucket==min.bucket[m]) %>% .$EDA.range %>% mean(na.rm=TRUE),
+        Fail = Inferences %>% filter(min.bucket==min.bucket[m]) %>% .$Gap %>% is.na() %>% sum()
+      )
+  )) %>% round(digits=3)
+  
+  # Calculate variable importance
+  Var.Imp <- do.call(rbind, 
+    lapply(seq(length(min.bucket)), function(m)
+      Inferences %>% 
+      filter(min.bucket==min.bucket[m]) %>% 
+      select(starts_with("X")) %>% 
+      var() %>% 
+      diag()
+  )) %>% round(digits=3)
+  
+  return(list(Results, Var.Imp))
+}
+```
+
+```{r}
+f_EXEC( min.bucket=c(0.05, 0.03, 0.02, 0.01, 0.005, 0.003, 0.002, 0.001) )
+```
+
+```{r, include=FALSE}
+# Add sound notification when execution is complete
+require(beepr)
+beep(sound = 2, expr = NULL)
+```

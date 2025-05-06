@@ -1,0 +1,153 @@
+---
+title: "CEM+MRT"
+subtitle: "CEM"
+author: "Ryo Mishima"
+date: "`r format(Sys.time(), '%Y/%m/%d')`"
+output:
+  ## HTML
+  distill::distill_article:
+    toc: true
+    toc_depth: 2
+    md_extensions: -ascii_identifiers
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  out.width = "\\textwidth", fig.align = "center", fig.pos = "t")
+
+# 表示桁数
+options(digits=3)
+
+# フォント周り
+library(systemfonts)
+family_sans  <- "MS Gothic"  ## "Noto Sans CJK JP"
+family_serif <- "MS Mincho"  ## "Noto Serif JP"
+
+# データ分析に使うライブラリ
+library(dplyr)
+library(knitr)
+library(tidyverse)
+
+library(tictoc)
+
+library(MatchIt)
+
+options(knitr.duplicate.label = 'allow')
+```
+
+# CEM
+```{r}
+f_CEM = function(df, arm="Z", cov_list){
+
+  SimData = df
+  N.obs   = nrow(SimData)
+  N.var   = length(cov_list)
+  P.trt   = nrow(SimData[SimData[,arm]==1,]) / nrow(SimData) # marginal prob of treatment
+  formula = eval(parse(text=paste(arm, "~", paste(cov_list, collapse = " + "))))
+  
+  # --- Step 1 : estimate propensity score --- 
+  
+  # logistic model
+  m_PS = glm(formula, family=binomial(link="logit"), data=SimData)
+  SimData = SimData %>% mutate(
+    est.PS = predict(m_PS, SimData) %>% invlogit() %>% as.vector()
+  )
+  
+  # --- Step 2 : matching --- 
+
+  Matched.Data = data.frame()
+  tryCatch({
+      Matching = 
+        matchit(formula, data = SimData,
+                method = "cem", estimand = "ATE", k2k = FALSE,
+                cutpoints = list(
+                  X1=c(0,0),X2=c(0,0),X3=c(0,0),X4=c(0,0),X5 =c(0,0),
+                  X6=c(0,0),X7=c(0,0),X8=c(0,0),X9=c(0,0),X10=c(0,0)
+                ))
+      
+      Matched.Data = Matching %>% match.data(object=., data=SimData) %>% 
+        group_by(subclass) %>%
+        mutate(
+          n.sub = n(),
+          n.sub.trt = sum(Z),
+          PS.sub = n.sub.trt / n.sub,
+          Wgt   = if_else(Z==1, P.trt/PS.sub, (1-P.trt)/(1-PS.sub))
+        ) %>%
+        filter(PS.sub!=0 & PS.sub!=1) %>%
+        ungroup()
+      
+      Matched.Data = Matched.Data[order(Matched.Data$subclass),] # sort
+    },
+    error = function(e) {
+      # No units were matched.
+    },
+    finally = {
+      return(list(Matched.Data))
+    },
+    silent = TRUE
+  )
+}
+```
+
+# Execution
+
+```{r}
+f_EXEC = function(num.covs, data=SimDatas){
+  
+  # covariates
+  cov_list = data %>% select(starts_with("X")) %>% colnames()
+  
+  cluster=f_doParallel(0.9)
+  
+  # matching
+  Inferences = foreach (i=unique(data$Sim), .combine="rbind", 
+                     .packages=c("dplyr","knitr","tidyr","tidyselect","tidyverse",
+                                 "LaplacesDemon","mnorm","MatchIt","geepack","marginaleffects"),
+                       .export=c("f_CEM","f_Inference")) %dopar% {
+  
+    # Matching
+    Matching   <- do.call(rbind, lapply( seq(length(num.covs)), function(j) 
+      f_CEM( data %>% filter(Sim==i), arm="Z", cov_list=cov_list[1:num.covs[j]] )
+    ))
+    
+    # Inference
+    Inference <- do.call(rbind, lapply( seq(length(num.covs)), function(k)
+      Matching[k,1] %>% as.data.frame() %>% 
+      f_Inference(df=., family="gaussian", cov_list=cov_list) %>% 
+      mutate(num.covs=num.covs[k])
+    ))
+  }
+  
+  stopCluster(cl=cluster)
+
+  # Result
+  Results <- do.call(rbind, lapply( seq(length(num.covs)), function(m)
+    data.frame(
+      Total    = max(data$Subj),
+      num.covs = num.covs[m],
+      # N.class  = Inferences %>% filter(num.covs==num.covs[m]) %>% .$N.class %>% mean(na.rm=TRUE),
+      N        = Inferences %>% filter(num.covs==num.covs[m]) %>% .$N   %>% mean(na.rm=TRUE),
+      Bias     = Inferences %>% filter(num.covs==num.covs[m]) %>% .$Gap %>% mean(na.rm=TRUE),
+      # EmpSE    = Inferences %>% filter(num.covs==num.covs[m]) %>% .$Gap %>% sd(na.rm=TRUE),
+      RMSE     = Inferences %>% filter(num.covs==num.covs[m]) %>% .$Gap.2 %>% mean(na.rm=TRUE) %>% sqrt(),
+      Width.CI = Inferences %>% filter(num.covs==num.covs[m]) %>% .$Width.CI %>% mean(na.rm=TRUE),
+      Cover    = Inferences %>% filter(num.covs==num.covs[m]) %>% .$Coverage %>% mean(na.rm=TRUE),
+      EDA      = Inferences %>% filter(num.covs==num.covs[m]) %>% .$EDA.range %>% mean(na.rm=TRUE),
+      Fail     = Inferences %>% filter(num.covs==num.covs[m]) %>% .$Gap %>% is.na() %>% sum()
+    )
+  )) %>% round(digits=3)
+  
+  return(list(Results))
+}
+```
+
+```{r}
+f_EXEC( num.covs=c(4:10) )
+```
+
+```{r, include=FALSE}
+# beep when executed
+require(beepr)
+beep(sound = 2, expr = NULL)
+```

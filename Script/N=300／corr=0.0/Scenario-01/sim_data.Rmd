@@ -1,0 +1,203 @@
+---
+title: "CEM+MRT"
+subtitle: "Simulation Data"
+author: "Ryo Mishima"
+date: "`r format(Sys.time(), '%Y/%m/%d')`"
+output:
+  distill::distill_article:
+    toc: true
+    toc_depth: 2
+    md_extensions: -ascii_identifiers
+---
+
+```{r setup, include=FALSE}
+# Setting global chunk options
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  out.width = "\\textwidth",
+  fig.align = "center",
+  fig.pos = "t"
+)
+
+# Setting numerical display options
+options(digits = 3, scipen = 10)
+
+# Loading required libraries
+library(systemfonts)
+library(dplyr)
+library(knitr)
+library(tidyverse)
+library(gtsummary)
+library(LaplacesDemon)
+library(mnorm)
+library(magrittr)
+library(ggplot2)
+library(ggpubr)
+
+# Setting font families
+family_sans  <- "MS Gothic"
+family_serif <- "MS Mincho"
+
+# Setting knitr options
+options(knitr.duplicate.label = 'allow')
+```
+
+```{r, echo=TRUE}
+f_GEN_DATA <- function(
+    n_sim    ,   # Number of simulation iterations
+    n_total  ,   # Total number of subjects
+    corr     ,   # Correlation coefficient between covariates
+    n_Xobs   ,   # Number of observed covariates
+    p_dichot ,   # Proportion of continuous covariates
+    n_Xunk   ,   # Number of unknown covariates
+    beta     ,   # coefficients for risk score model
+    alpha        # coefficients for propensity score model
+) {
+  # Set random seed for reproducibility
+  set.seed(2024)
+  
+  # Generate simulation data
+  SimDatas <- do.call(rbind, lapply(seq(n_sim), function(sim) {
+    # Initialize empty data frame
+    SimData <- matrix(NA, nrow = n_total, ncol = (n_Xobs + n_Xunk + 5)) %>% 
+      as.data.frame()
+    
+    # Set column names
+    colnames(SimData) <- c(
+      paste0("X", seq(1, n_Xobs)),
+      paste0("U", seq(1, n_Xunk)),
+      "Sim", "Subj", "TE", "PS", "RS"
+    )
+    
+    # Generate correlated covariates
+    Xs <- rmnorm(
+      n = n_total,
+      mean = rep(0, (n_Xobs + n_Xunk)),
+      sigma = diag(1, nrow = (n_Xobs + n_Xunk), ncol = (n_Xobs + n_Xunk)) -
+        diag(corr, nrow = (n_Xobs + n_Xunk), ncol = (n_Xobs + n_Xunk)) +
+        matrix(rep(corr, (n_Xobs + n_Xunk) * (n_Xobs + n_Xunk)),
+               nrow = (n_Xobs + n_Xunk), ncol = (n_Xobs + n_Xunk))
+    )
+    
+    # Process continuous and binary covariates
+    X_dichot = sample(seq(n_Xobs), size=floor(n_Xobs*p_dichot))
+    Xs[, -X_dichot] <-      Xs[, -X_dichot] 
+    Xs[,  X_dichot] <- 2 * (Xs[,  X_dichot] > 0.5) - 1
+    
+    # Assign simulation and subject IDs
+    SimData[1:n_total, "Sim"]  <- rep(sim, n_total)
+    SimData[1:n_total, "Subj"] <- seq(n_total)
+    SimData[1:n_total, 1:(n_Xobs + n_Xunk)] <- Xs[, c(1:(n_Xobs + n_Xunk))]
+    
+    # Generate response surface
+    beta <-        beta  / norm(as.matrix(beta), type = "2")
+    SimData[1:n_total, "RS"] <- ( 0.4 + (Xs %*% beta)) %>% .[, 1]
+    
+    # Generate propensity scores
+    alpha <- 0.6 * alpha / norm(as.matrix(alpha), type = "2")
+    SimData[1:n_total, "PS"] <- invlogit( 0.2 + (Xs %*% alpha)) %>% .[, 1]
+    
+    # Set treatment effect
+    SimData[1:n_total, "TE"] <- -1.0
+    
+    # Calculate sine distance between beta and alpha
+    SimData[1:n_total, "sin(α,β)"] <- 
+      ((beta %*% alpha) / 
+         (norm(as.matrix(beta), type = "2") * 
+            norm(as.matrix(alpha), type = "2"))) %>%
+      round(digits = 8) %>%
+      acos() %>%
+      sin() %>%
+      round(digits = 3) %>%
+      as.numeric()
+    
+    return(SimData)
+  }))
+  
+  # Generate treatment assignment and outcomes
+  SimDatas <- SimDatas %>% mutate(
+    Z = rbinom(n = nrow(SimDatas), size = 1, prob = PS),
+    Y = rnorm(n = nrow(SimDatas), mean = RS, sd = 1.0) + TE * Z
+  )
+  
+  return(SimDatas)
+}
+```
+
+
+
+```{r, include=FALSE}
+rmarkdown::render(input = "./settings.r")
+```
+
+```{r}
+print(list(n_sim, n_total, corr, n_Xobs, p_dichot, n_Xunk, beta, alpha))
+```
+
+```{r}
+# Generate simulation data with specified parameters
+SimDatas <- f_GEN_DATA(n_sim=1, n_total=1000, corr, n_Xobs, p_dichot, n_Xunk, beta, alpha)
+
+# Calculate mean PS and RS
+SimDatas <- SimDatas %>% 
+  mutate(mean.PS = mean(PS), mean.RS = mean(RS))
+
+# Create scatter plot of PS vs RS
+ggplot(SimDatas, aes(x = RS, y = PS)) + 
+  geom_point(size = 2, shape = 16, color = "gray", fill = "gray") +
+  scale_y_continuous(limits = c(0, 1)) +
+  stat_cor(p.accuracy = 0.01, r.accuracy = 0.01) +
+  geom_text(
+    x = SimDatas$mean.RS,
+    y = SimDatas$mean.PS,
+    label = "■",
+    color = "coral"
+  ) +
+  geom_text(
+    x = 0,
+    y = 0.9,
+    label = paste("sine dist. = ", median(SimDatas$'sin(α,β)')),
+    color = "coral"
+  )
+```
+
+```{r}
+# Create histograms of PS for treated and control groups
+par(mfrow = c(2, 1))
+
+# Upper panel: treated group
+par(mar = c(0, 10, 6, 3))
+SimDatas[SimDatas$Z == 1, "PS"] %>%
+  hist(
+    .,
+    breaks = 10,
+    xlim = c(0, 1),
+    ylim = c(0, 300),
+    col = rgb(1, 0, 0, 0.20),
+    xlab = "",
+    xaxt = "none",
+    main = ""
+  )
+legend(
+  "topright",
+  legend = c("treated", "control"),
+  col = c(rgb(1, 0, 0, 0.40), rgb(0, 0, 1, 0.40)),
+  pt.cex = 2,
+  pch = 110
+)
+
+# Lower panel: control group
+par(mar = c(6, 10, 0, 3))
+SimDatas[SimDatas$Z == 0, "PS"] %>%
+  hist(
+    .,
+    breaks = 10,
+    xlim = c(0, 1),
+    ylim = c(300, 0),
+    col = rgb(0, 0, 1, 0.20),
+    xlab = "propensity score",
+    main = ""
+  )
+```

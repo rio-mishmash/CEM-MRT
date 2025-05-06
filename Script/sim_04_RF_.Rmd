@@ -1,0 +1,180 @@
+---
+title: "CEM+MRT"
+subtitle: "Random Forest"
+author: "Ryo Mishima"
+date: "`r format(Sys.time(), '%Y/%m/%d')`"
+output:
+  ## HTML
+  distill::distill_article:
+    toc: true
+    toc_depth: 2
+    md_extensions: -ascii_identifiers
+---
+
+```{r setup, include=FALSE}
+# Set global options
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  out.width = "\\textwidth", fig.align = "center", fig.pos = "t")
+
+# Set display digits
+options(digits=3)
+
+# Set fonts
+library(systemfonts)
+family_sans  <- "MS Gothic"  ## "Noto Sans CJK JP"
+family_serif <- "MS Mincho"  ## "Noto Serif JP"
+
+# Load required libraries for data analysis
+library(dplyr)
+library(knitr)
+library(tidyverse)
+library(ranger)  # For random forest
+library(tictoc)
+
+options(knitr.duplicate.label = 'allow')
+```
+
+# Random Forest
+```{r}
+f_RF_ = function(df, arm, cov_list, num.trees){
+  # Initialize data
+  SimData = df
+  N.obs   = nrow(SimData)
+  N.var   = length(cov_list)
+  P.trt   = nrow(SimData[SimData[,arm]==1,]) / nrow(SimData) # marginal prob of treatment
+  formula = eval(parse(text=paste(arm, "~", paste(cov_list, collapse = " + "))))
+  
+  # Step 1: Estimate propensity score
+  # Fit logistic model
+  m_PS = glm(formula, family=binomial(link="logit"), data=SimData, control=glm.control(maxit=1e+3))
+
+  SimData = SimData %>% mutate(
+    est.PS = predict(m_PS, SimData) %>% invlogit() %>% as.vector()
+  )
+
+  # Step 2: Build Random Forest
+  # Prepare training data
+  Training = SimData
+  Training[,cov_list] = floor(Training[, cov_list]*2)/2
+  
+  formula = eval(parse(text=paste("est.PS ~", paste(cov_list, collapse = " + "))))
+
+  # Fit random forest model
+  RF = ranger(formula, data = Training,
+              probability = FALSE, classification = FALSE, splitrule = "variance", importance = "impurity",
+              num.trees  = num.trees, mtry = floor(sqrt(N.var)), replace = TRUE, sample.fraction = 1,
+              min.node.size = 1, min.bucket = 1, max.depth = 2,
+              oob.error = FALSE, write.forest = TRUE, seed = 2024)
+
+  # Calculate variable importance
+  Var.Imp = RF$variable.importance
+
+  # Create mesh for matching
+  SimData = SimData %>% 
+    mutate(
+      mesh = predict(object=RF, data=SimData, type="terminalNodes")$predictions %>% 
+                     apply(., 1, function(row) paste(row, collapse = "")) %>% as.factor()
+    )
+  
+  # Initialize matched data
+  Matched.Data = data.frame()
+  
+  # Perform matching
+  tryCatch({
+      Matching =
+        matchit(Z ~ mesh, data = SimData, 
+                method="exact", estimand="ATE", k2k=FALSE,
+                seed=2024)
+      
+      Matched.Data = Matching %>% match.data(object=., data=SimData) %>% 
+        group_by(subclass) %>%
+        mutate(
+          n.sub = n(),
+          n.sub.trt = sum(Z),
+          PS.sub = n.sub.trt / n.sub,
+          Wgt   = if_else(Z==1, P.trt/PS.sub, (1-P.trt)/(1-PS.sub))
+        ) %>%
+        filter(PS.sub!=0 & PS.sub!=1) %>%
+        ungroup()
+      
+      Matched.Data = Matched.Data[order(Matched.Data$subclass),] # sort
+    },
+    error = function(e) {
+      # Handle case when no units are matched
+    },
+    finally = {
+      return(list(Matched.Data, RF, Var.Imp))
+    },
+    silent = TRUE
+  )
+}
+```
+
+# Execution
+```{r}
+f_EXEC = function(num.trees, data=SimDatas){
+  # Get covariate names
+  cov_list = data %>% select(starts_with("X")) %>% colnames()
+  
+  # Set up parallel processing
+  cluster=f_doParallel(0.9)
+  
+  # Perform matching and inference
+  Inferences = foreach (i=unique(data$Sim), .combine="rbind", 
+                     .packages=c("dplyr","knitr","tidyr","tidyselect","tidyverse",
+                                 "LaplacesDemon","mnorm","MatchIt","ranger","geepack","marginaleffects"),
+                       .export=c("f_RF_","f_Inference")) %dopar% {
+  
+    # Match data
+    Matching   <- do.call(rbind, lapply( seq(length(num.trees)), function(j) 
+      f_RF_( data %>% filter(Sim==i), arm="Z", cov_list=cov_list, num.trees=num.trees[j] )
+    ))
+    
+    # Perform inference
+    Inference <- do.call(rbind, lapply( seq(length(num.trees)), function(k)
+      Matching[k,1] %>% as.data.frame() %>% 
+      f_Inference(df=., family="gaussian", cov_list=cov_list) %>% 
+      cbind( t( as.data.frame( Matching[k,3][[1]] ) ) ) %>%
+      mutate(num.trees=num.trees[k])
+    ))
+  }
+  
+  stopCluster(cl=cluster)
+
+  # Calculate results
+  Results <- do.call(rbind, lapply( seq(length(num.trees)), function(m)
+    data.frame(
+      Total    = max(data$Subj),
+      num.trees = num.trees[m],
+      # N.class  = Inferences %>% filter(num.trees==num.trees[m]) %>% .$N.class %>% mean(na.rm=TRUE),
+      N        = Inferences %>% filter(num.trees==num.trees[m]) %>% .$N   %>% mean(na.rm=TRUE),
+      Bias     = Inferences %>% filter(num.trees==num.trees[m]) %>% .$Gap %>% mean(na.rm=TRUE),
+      # EmpSE    = Inferences %>% filter(num.trees==num.trees[m]) %>% .$Gap %>% sd(na.rm=TRUE),
+      RMSE     = Inferences %>% filter(num.trees==num.trees[m]) %>% .$Gap.2 %>% mean(na.rm=TRUE) %>% sqrt(),
+      Width.CI = Inferences %>% filter(num.trees==num.trees[m]) %>% .$Width.CI %>% mean(na.rm=TRUE),
+      Cover    = Inferences %>% filter(num.trees==num.trees[m]) %>% .$Coverage %>% mean(na.rm=TRUE),
+      EDA      = Inferences %>% filter(num.trees==num.trees[m]) %>% .$EDA.range %>% mean(na.rm=TRUE),
+      Fail     = Inferences %>% filter(num.trees==num.trees[m]) %>% .$Gap %>% is.na() %>% sum()
+    )
+  )) %>% round(digits=3)
+  
+  # Calculate variable importance
+  Var.Imp <- do.call(rbind, lapply( seq(length(num.trees)), function(m)
+    Inferences %>% filter(num.trees==num.trees[m]) %>% 
+      select( starts_with("X") ) %>% var() %>% diag()
+  )) %>% round(digits=3)
+  
+  return(list(Results, Var.Imp))
+}
+```
+
+```{r}
+f_EXEC( num.trees=c(3,5,6,8,10,12,15,20,25,30,40) )
+```
+
+```{r, include=FALSE}
+# Notification sound upon completion
+require(beepr)
+beep(sound = 2, expr = NULL)
+```
