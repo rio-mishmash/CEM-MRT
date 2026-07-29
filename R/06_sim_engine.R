@@ -4,8 +4,9 @@
 
 #' Run a Simulation Block for a Specific Scenario
 #' @param gen_func Data generation function for the scenario (from 02_data_generation.R)
+#' @param run_methods Vector of method names to execute (e.g., c("PSM", "CART", "CEM"))
 #' @return A list containing Summary data frame and Importance data frame
-run_simulation_block <- function(gen_func) {
+run_simulation_block <- function(gen_func, run_methods = c("PSM", "CART", "CEM")) {
   # Seed for the simulation block iterations
   set.seed(GLOBAL_SEED)
   
@@ -23,30 +24,40 @@ run_simulation_block <- function(gen_func) {
         res_naive <- run_naive(df_sim)
         
         # Baseline: PS Estimation for PSM and standard methods
-        m_ps_glm <- glm(formula = ps_formula, data = df_sim, family = binomial(link = "logit"))
-        df_sim$ps.est <- predict(m_ps_glm, type = "response")
+        if ("PSM" %in% run_methods) {
+          m_ps_glm <- glm(formula = ps_formula, data = df_sim, family = binomial(link = "logit"))
+          df_sim$ps.est <- predict(m_ps_glm, type = "response")
+        }
         
         # Baseline: Standard CEM (fixed 2-bin breaks)
-        res_cem <- run_standard_cem(df_sim, breaks_n = 2)
+        res_cem <- if ("CEM" %in% run_methods) {
+          run_standard_cem(df_sim, breaks_n = 2) 
+        } else NULL
         
         # Pre-train Tree Models for CEM Variants
         # CART (Single Tree)
-        base_tree_cart <- ranger::ranger(ps_formula, data = df_sim, splitrule = "gini", num.threads = 1,
-                                         min.node.size = MIN_NODE_SIZE, num.trees = 1,
-                                         mtry = length(x_vars), max.depth = NULL, node.stats = TRUE)
+        base_tree_cart <- if ("CART" %in% run_methods) {
+          ranger::ranger(ps_formula, data = df_sim, splitrule = "gini", num.threads = 1,
+                         min.node.size = MIN_NODE_SIZE, num.trees = 1,
+                         mtry = length(x_vars), max.depth = NULL, node.stats = TRUE)
+        } else NULL
         
         # Random Forest
-        base_rf <- ranger::ranger(ps_formula, data = df_sim, splitrule = "gini", num.threads = 1,
-                                  min.node.size = MIN_NODE_SIZE, num.trees = NUM_TREES_RF,
-                                  mtry = MTRY_DEFAULT, max.depth = MAX_DEPTH_RF, node.stats = TRUE)
+        base_rf <- if ("RF" %in% run_methods) {
+          ranger::ranger(ps_formula, data = df_sim, splitrule = "gini", num.threads = 1,
+                         min.node.size = MIN_NODE_SIZE, num.trees = NUM_TREES_RF,
+                         mtry = MTRY_DEFAULT, max.depth = MAX_DEPTH_RF, node.stats = TRUE)
+        } else NULL
         
         # Forest for MRT Selection
-        forest_mrt <- ranger::ranger(ps_formula, data = df_sim, splitrule = "gini", num.threads = 1,
-                                     min.node.size = MIN_NODE_SIZE, num.trees = NUM_TREES_MRT,
-                                     mtry = MTRY_DEFAULT, max.depth = NULL, node.stats = TRUE)
+        forest_mrt <- if ("MRT" %in% run_methods) {
+          ranger::ranger(ps_formula, data = df_sim, splitrule = "gini", num.threads = 1,
+                         min.node.size = MIN_NODE_SIZE, num.trees = NUM_TREES_MRT,
+                         mtry = MTRY_DEFAULT, max.depth = NULL, node.stats = TRUE)
+        } else NULL
         
         # Select the Most Representative Tree (MRT)
-        rep_tree_obj <- get_representative_tree(forest_mrt, df_sim)
+        rep_tree_obj <- if ("MRT" %in% run_methods) get_representative_tree(forest_mrt, df_sim) else NULL
         
         # Results container for current iteration across target sample sizes
         iter_res <- list()
@@ -54,30 +65,45 @@ run_simulation_block <- function(gen_func) {
         # 2. Iterate through Target Sample Size Grid (defined in config.R)
         for (t_n in TARGET_GRID) {
           # Process CART
-          t_info_cart <- prepare_tree_info(base_tree_cart, 1)
-          nodes_cart  <- predict(base_tree_cart, df_sim, type = "terminalNodes")$predictions
-          res_pruned_cart <- prune_forest_to_target(nodes_cart, t_info_cart, df_sim, t_n)
-          imp_cart <- calculate_pruned_importance(base_tree_cart, 1, t_info_cart, res_pruned_cart$final_nodes)
+          res_cart_ate <- NULL
+          imp_cart <- NULL
+          if ("CART" %in% run_methods) {
+            t_info_cart <- prepare_tree_info(base_tree_cart, 1)
+            nodes_cart  <- predict(base_tree_cart, df_sim, type = "terminalNodes")$predictions
+            res_pruned_cart <- prune_forest_to_target(nodes_cart, t_info_cart, df_sim, t_n)
+            imp_cart <- calculate_pruned_importance(base_tree_cart, 1, t_info_cart, res_pruned_cart$final_nodes)
+            res_cart_ate <- calc_gee_stratum_ate(dplyr::mutate(df_sim, s = res_pruned_cart$strata), "s")
+          }
           
           # Process RF
-          t_info_rf <- prepare_tree_info(base_rf, 1:NUM_TREES_RF)
-          nodes_rf  <- predict(base_rf, df_sim, type = "terminalNodes")$predictions
-          res_pruned_rf <- prune_forest_to_target(nodes_rf, t_info_rf, df_sim, t_n)
-          imp_rf <- calculate_pruned_importance(base_rf, 1:NUM_TREES_RF, t_info_rf, res_pruned_rf$final_nodes)
+          res_rf_ate <- NULL
+          imp_rf <- NULL
+          if ("RF" %in% run_methods) {
+            t_info_rf <- prepare_tree_info(base_rf, 1:NUM_TREES_RF)
+            nodes_rf  <- predict(base_rf, df_sim, type = "terminalNodes")$predictions
+            res_pruned_rf <- prune_forest_to_target(nodes_rf, t_info_rf, df_sim, t_n)
+            imp_rf <- calculate_pruned_importance(base_rf, 1:NUM_TREES_RF, t_info_rf, res_pruned_rf$final_nodes)
+            res_rf_ate <- calc_gee_stratum_ate(dplyr::mutate(df_sim, s = res_pruned_rf$strata), "s")
+          }
           
           # Process MRT
-          t_info_mrt <- prepare_tree_info(forest_mrt, rep_tree_obj$index)
-          nodes_mrt  <- predict(forest_mrt, df_sim, type = "terminalNodes")$predictions[, rep_tree_obj$index, drop = FALSE]
-          res_pruned_mrt <- prune_forest_to_target(nodes_mrt, t_info_mrt, df_sim, t_n)
-          imp_mrt <- calculate_pruned_importance(forest_mrt, rep_tree_obj$index, t_info_mrt, res_pruned_mrt$final_nodes)
+          res_mrt_ate <- NULL
+          imp_mrt <- NULL
+          if ("MRT" %in% run_methods) {
+            t_info_mrt <- prepare_tree_info(forest_mrt, rep_tree_obj$index)
+            nodes_mrt  <- predict(forest_mrt, df_sim, type = "terminalNodes")$predictions[, rep_tree_obj$index, drop = FALSE]
+            res_pruned_mrt <- prune_forest_to_target(nodes_mrt, t_info_mrt, df_sim, t_n)
+            imp_mrt <- calculate_pruned_importance(forest_mrt, rep_tree_obj$index, t_info_mrt, res_pruned_mrt$final_nodes)
+            res_mrt_ate <- calc_gee_stratum_ate(dplyr::mutate(df_sim, s = res_pruned_mrt$strata), "s")
+          }
           
           # Store all method results for this Target N
           iter_res[[as.character(t_n)]] <- list(
             Naive = res_naive,
-            PSM   = run_psm_subclass_target(df_sim, t_n, already_estimated = TRUE),
-            CART  = calc_gee_stratum_ate(dplyr::mutate(df_sim, s = res_pruned_cart$strata), "s"),
-            RF    = calc_gee_stratum_ate(dplyr::mutate(df_sim, s = res_pruned_rf$strata), "s"),
-            MRT   = calc_gee_stratum_ate(dplyr::mutate(df_sim, s = res_pruned_mrt$strata), "s"),
+            PSM   = if ("PSM" %in% run_methods) run_psm_subclass_target(df_sim, t_n, already_estimated = TRUE) else NULL,
+            CART  = res_cart_ate,
+            RF    = res_rf_ate,
+            MRT   = res_mrt_ate,
             CEM   = res_cem,
             Imp_CART = imp_cart,
             Imp_RF   = imp_rf,

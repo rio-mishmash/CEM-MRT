@@ -18,12 +18,30 @@ generate_base_df <- function(n, rho = 0) {
   data.frame(
     X1 = round(X[, 1], digits = 1),
     X2 = round(X[, 2], digits = 1),
-    # Transform continuous variables to binary (-1 or 1) based on sign
-    X3 = -1 + (X[, 3] > 0) * 2,
-    X4 = -1 + (X[, 4] > 0) * 2,
-    X5 = -1 + (X[, 5] > 0) * 2
+    X3 = round(X[, 3], digits = 1),
+    X4 = round(X[, 4], digits = 1),
+    X5 = round(X[, 5], digits = 1)
+    # # Transform continuous variables to binary (-1 or 1) based on sign
+    # X4 = -1 + (X[, 4] > 0) * 2,
+    # X5 = -1 + (X[, 5] > 0) * 2
   )
 }
+
+#' Scenario: Test
+gen_scen_test <- function(n) {
+  df <- generate_base_df(n, rho = 0.2)
+  df <- dplyr::select(df, c("X1","X2"))
+  df$TE    <- 2
+  df$RS    <- 1.0 * (2 * df$X1 - 2 * df$X2)
+  logit_ps <- 0.1 * (2 * df$X1 + 2 * df$X2)
+  df$PS    <- 1 / (1 + exp(-logit_ps))
+  df$Z     <- rbinom(n, 1, df$PS)
+  df$Y     <- df$RS + df$TE * df$Z + rnorm(n, 0, 1)
+  return(df)
+}
+
+
+
 
 #' Scenario: Linear - High Correlation
 gen_scen_high_corr <- function(n) {

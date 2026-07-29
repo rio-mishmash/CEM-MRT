@@ -58,7 +58,7 @@ build_custom_plot <- function(sim_output, title_str = "", xlab_str = "Matched Sa
       )
     
     x_lims <- if (exists("Nobs")) c(Nobs * 0.60, Nobs) else NULL
-    y_lims <- if (i == 3) c(90, 140) else c(0, 100)
+    y_lims <- if (i == 3) c(90, 160) else c(0, 100)
     
     p <- p + coord_cartesian(xlim = x_lims, ylim = y_lims)
     p_list[[i]] <- p

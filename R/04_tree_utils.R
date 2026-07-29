@@ -118,7 +118,7 @@ prune_forest_to_target <- function(initial_nodes, tree_info_list, df, target_n) 
   idx_z0 <- which(df$Z == 0)
   X_cols <- grep("^X", names(df), value = TRUE)
   
-  Sigma <- cov(df[, X_cols])
+  Sigma <- cov(df[, X_cols, drop = FALSE])
   Sigma_inv <- MASS::ginv(Sigma)
   
   # 1. Pre-calculate branch scores (Mahalanobis Distance) for pruning
