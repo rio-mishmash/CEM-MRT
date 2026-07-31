@@ -15,25 +15,28 @@ generate_base_df <- function(n, rho = 0) {
   X <- MASS::mvrnorm(n, mu = mu, Sigma = Sigma)
   
   # Convert to data frame and round/binarize
-  data.frame(
-    X1 = round(X[, 1], digits = 1),
-    X2 = round(X[, 2], digits = 1),
-    X3 = round(X[, 3], digits = 1),
-    X4 = round(X[, 4], digits = 1),
-    X5 = round(X[, 5], digits = 1)
+  df <- data.frame(
+    X1 = round(X[, 1], digits = 2),
+    X2 = round(X[, 2], digits = 2),
+    X3 = round(X[, 3], digits = 2)
+    # X4 = round(X[, 4], digits = 2),
+    # X5 = round(X[, 5], digits = 2)
     # # Transform continuous variables to binary (-1 or 1) based on sign
-    # X4 = -1 + (X[, 4] > 0) * 2,
-    # X5 = -1 + (X[, 5] > 0) * 2
+    # X3 = sign(X[, 3]),
+    # X4 = sign(X[, 4]),
+    # X5 = sign(X[, 5])
   )
+  return(df)
 }
 
 #' Scenario: Test
 gen_scen_test <- function(n) {
   df <- generate_base_df(n, rho = 0.2)
-  df <- dplyr::select(df, c("X1","X2"))
   df$TE    <- 2
-  df$RS    <- 1.0 * (2 * df$X1 - 2 * df$X2)
-  logit_ps <- 0.1 * (2 * df$X1 + 2 * df$X2)
+  X_mat    <- dplyr::select(df, starts_with("X")) |> as.matrix()
+  df$RS    <- X_mat %*% c( 2, -2, 1) * 1.0
+  logit_ps <- X_mat %*% c( 6,  4, 1) * 0.1
+  #logit_ps <- 0.1 * (3 * sign(df$X1) + 2 * sign(df$X2))
   df$PS    <- 1 / (1 + exp(-logit_ps))
   df$Z     <- rbinom(n, 1, df$PS)
   df$Y     <- df$RS + df$TE * df$Z + rnorm(n, 0, 1)
