@@ -18,7 +18,7 @@ GLOBAL_SEED <- 2026
 N_OBS <- 200 
 
 # Number of simulation iterations
-N_SIM <- 2000
+N_SIM <- 1000
 
 # --- 4. Target Sample Size Grid ---
 # Defines the range of matched sample sizes to evaluate
