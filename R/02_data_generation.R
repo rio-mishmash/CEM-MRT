@@ -18,10 +18,12 @@ generate_base_df <- function(n, rho = 0) {
   df <- data.frame(
     X1 = round(X[, 1], digits = 2),
     X2 = round(X[, 2], digits = 2),
-    X3 = round(X[, 3], digits = 2)
-    # X4 = round(X[, 4], digits = 2),
-    # X5 = round(X[, 5], digits = 2)
-    # # Transform continuous variables to binary (-1 or 1) based on sign
+    X3 = round(X[, 3], digits = 2),
+    X4 = round(X[, 4], digits = 2),
+    X5 = round(X[, 5], digits = 2)
+    # Transform continuous variables to binary (-1 or 1) based on sign
+    # X1 = sign(X[, 1]),
+    # X2 = sign(X[, 2]),
     # X3 = sign(X[, 3]),
     # X4 = sign(X[, 4]),
     # X5 = sign(X[, 5])
@@ -29,31 +31,12 @@ generate_base_df <- function(n, rho = 0) {
   return(df)
 }
 
-#' Scenario: Test
-gen_scen_test <- function(n) {
-  df <- generate_base_df(n, rho = 0.2)
-  df$TE    <- 2
-  X_mat    <- dplyr::select(df, starts_with("X")) |> as.matrix()
-  df$RS    <- X_mat %*% c( 2, -2, 1) * 1.0
-  logit_ps <- X_mat %*% c( 6,  4, 1) * 0.1
-  #logit_ps <- 0.1 * (3 * sign(df$X1) + 2 * sign(df$X2))
-  df$PS    <- 1 / (1 + exp(-logit_ps))
-  df$Z     <- rbinom(n, 1, df$PS)
-  df$Y     <- df$RS + df$TE * df$Z + rnorm(n, 0, 1)
-  return(df)
-}
-
-
-
-
 #' Scenario: Linear - High Correlation
 gen_scen_high_corr <- function(n) {
   df <- generate_base_df(n, rho = 0.2)
   df$TE <- 3
-  # Linear risk score
-  df$RS <- 1.0 * (3 * df$X1 + 1 * df$X2 + 3 * df$X3 + 2 * df$X4 + 1 * df$X5)
-  # Propensity score with high correlation to risk score
-  logit_ps <- 0.1 * (3 * df$X1 + 1 * df$X2 + 3 * df$X3 + 2 * df$X4 + 1 * df$X5)
+  df$RS    <- 1.0 * ( 3 * df$X1 + 2 * df$X2 + 1 * df$X3 + 2 * df$X4 + 1 * df$X5)
+  logit_ps <- 0.1 * ( 6 * df$X1 + 4 * df$X2 + 2 * df$X3 + 1 * df$X4 + 1 * df$X5)
   df$PS <- 1 / (1 + exp(-logit_ps))
   df$Z <- rbinom(n, 1, df$PS)
   df$Y <- df$RS + df$TE * df$Z + rnorm(n, 0, 1)
@@ -64,9 +47,8 @@ gen_scen_high_corr <- function(n) {
 gen_scen_low_corr <- function(n) {
   df <- generate_base_df(n, rho = 0.2)
   df$TE <- 3
-  df$RS <- 1.0 * (3 * df$X1 + 1 * df$X2 + 3 * df$X3 + 2 * df$X4 + 1 * df$X5)
-  # Propensity score with different variable weights
-  logit_ps <- 0.1 * (2 * df$X1 - 2 * df$X2 + 1 * df$X3 + 2 * df$X4 - 3 * df$X5)
+  df$RS    <- 1.0 * ( 3 * df$X1 + 2 * df$X2 + 1 * df$X3 + 2 * df$X4 + 1 * df$X5)
+  logit_ps <- 0.1 * ( 6 * df$X1 - 4 * df$X2 + 2 * df$X3 - 1 * df$X4 + 1 * df$X5)
   df$PS <- 1 / (1 + exp(-logit_ps))
   df$Z <- rbinom(n, 1, df$PS)
   df$Y <- df$RS + df$TE * df$Z + rnorm(n, 0, 1)
@@ -77,7 +59,7 @@ gen_scen_low_corr <- function(n) {
 gen_scen_tree <- function(n) {
   df <- generate_base_df(n, rho = 0.2)
   df$TE <- 3
-  df$RS <- 1.0 * (3 * df$X1 + 1 * df$X2 + 3 * df$X3 + 2 * df$X4 + 1 * df$X5)
+  df$RS    <- 1.0 * ( 3 * df$X1 + 2 * df$X2 + 1 * df$X3 + 2 * df$X4 + 1 * df$X5)
   # Step-function (tree-like) propensity score logic
   df$PS <- dplyr::case_when(
     df$X3 > 0 & df$X4 > 0 ~ 0.80,
@@ -94,10 +76,8 @@ gen_scen_tree <- function(n) {
 gen_scen_complex <- function(n) {
   df <- generate_base_df(n, rho = 0.2)
   df$TE <- 3
-  # Risk score with squared, exponential, and interaction terms
-  df$RS <- 1.0 * (0 * df$X1 - 0 * df$X2 + 2 * df$X3 + 1 * df$X4 + 1 * df$X5 +
-                 1 * ((df$X1 + 1)^2) - exp(df$X2 - 1) + 2 * df$X4 * df$X5 - 1)
-  logit_ps <- 0.1 * (0 * df$X1 - 0 * df$X2 + 2 * df$X3 + 1 * df$X4 + 1 * df$X5 +
+  df$RS    <- 1.0 * ( 3 * df$X1 + 2 * df$X2 + 1 * df$X3 + 2 * df$X4 + 1 * df$X5)
+  logit_ps <- 0.1 * ( 3 * df$X1 + 2 * df$X2 + 1 * df$X3 + 2 * df$X4 + 1 * df$X5 +
                     1 * ((df$X1 + 1)^2) - exp(df$X2 - 1) + 2 * df$X4 * df$X5 - 1)
   df$PS <- 1 / (1 + exp(-logit_ps))
   df$Z <- rbinom(n, 1, df$PS)
@@ -109,9 +89,10 @@ gen_scen_complex <- function(n) {
 gen_scen_hte <- function(n) {
   df <- generate_base_df(n, rho = 0.2)
   # Treatment Effect varies based on covariates
-  df$TE <- 2 + 1 * df$X2 + 2 * df$X4
-  df$RS <- 1.0 * (3 * df$X1 + 1 * df$X2 + 3 * df$X3 + 2 * df$X4 + 1 * df$X5)
-  logit_ps <- 0.1 * (3 * df$X1 + 1 * df$X2 + 3 * df$X3 + 2 * df$X4 + 1 * df$X5)
+  df$TE    <- 3 + 
+              0.1 * ( 3 * df$X1 + 2 * df$X2 + 1 * df$X3 + 2 * df$X4 + 1 * df$X5)
+  df$RS    <- 1.0
+  logit_ps <- 0.1 * ( 6 * df$X1 + 4 * df$X2 + 2 * df$X3 + 1 * df$X4 + 1 * df$X5)
   df$PS <- 1 / (1 + exp(-logit_ps))
   df$Z <- rbinom(n, 1, df$PS)
   df$Y <- df$RS + df$TE * df$Z + rnorm(n, 0, 1)

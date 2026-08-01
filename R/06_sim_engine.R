@@ -41,15 +41,25 @@ run_simulation_block <- function(gen_func,
           }
         }
         
-        ps_formula <- as.formula(paste("as.factor(Z) ~", paste(x_vars, collapse = " + ")))
+        ps_formula <- as.formula(paste("Z ~", paste(x_vars, collapse = " + ")))
         
         # Baseline: Naive (Unadjusted) Estimation on raw data
         res_naive <- run_naive(df_sim_raw)
         
         # Baseline: PS Estimation for PSM
         if ("PSM" %in% run_methods) {
-          m_ps_glm <- glm(formula = ps_formula, data = df_sim_raw, family = binomial(link = "logit"))
-          df_sim_raw$ps.est <- predict(m_ps_glm, type = "response")
+          
+          ## generalized linear model
+          # m_ps_glm <- glm(formula = ps_formula, data = df_sim_raw, family = binomial(link = "logit"))
+          # df_sim_raw$ps.est <- predict(m_ps_glm, type = "response")
+          
+          ## random forest
+          m_ps_rf   <- ranger::ranger(ps_formula, data = df_sim_tree, splitrule = "variance", num.threads = 1,
+                                      min.node.size = MIN_NODE_SIZE, num.trees = NUM_TREES_RF,
+                                      mtry = MTRY_DEFAULT, max.depth = MAX_DEPTH_RF, node.stats = FALSE)
+          df_sim_raw$ps.est  <- predict(m_ps_rf, df_sim_tree)$predictions
+          
+          # cor(df_sim_raw$PS, df_sim_raw$ps.est) |> print()
         }
         
         # Baseline: Standard CEM
@@ -58,6 +68,8 @@ run_simulation_block <- function(gen_func,
         } else NULL
         
         # Pre-train Tree Models & Prepare Info for CEM Variants
+        
+        ps_formula <- as.formula(paste("as.factor(Z) ~", paste(x_vars, collapse = " + ")))
         
         # 1. CART (Single Tree)
         if ("CART" %in% run_methods) {

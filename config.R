@@ -17,13 +17,13 @@ GLOBAL_SEED <- 2026
 # Common values: 200 or 400
 N_OBS <- 200 
 
-# Number of simulation iterations (>=2,000)
+# Number of simulation iterations
 N_SIM <- 2000
 
 # --- 4. Target Sample Size Grid ---
 # Defines the range of matched sample sizes to evaluate
 # Default: From N_OBS down to 50% of N_OBS in 5% decrements
-TARGET_GRID <- seq(N_OBS, floor(N_OBS * 0.50), by = -floor(N_OBS * 0.05))
+TARGET_GRID <- seq(N_OBS, floor(N_OBS * 0.70), by = -floor(N_OBS * 0.10))
 
 # --- 5. Core Method Parameters ---
 
