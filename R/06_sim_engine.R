@@ -9,8 +9,6 @@
 run_simulation_block <- function(gen_func, 
                                  run_methods = c("PSM", "CEM", "CART", "RF", "MRT"),
                                  cutoff_percentiles = NULL) {
-  # Seed for the simulation block iterations
-  set.seed(GLOBAL_SEED)
   
   # 1. Execute Iterations in Parallel using future.apply
   sim_raw <- suppressWarnings(

@@ -21,9 +21,7 @@ N_OBS <- 200
 N_SIM <- 1000
 
 # --- 4. Target Sample Size Grid ---
-# Defines the range of matched sample sizes to evaluate
-# Default: From N_OBS down to 50% of N_OBS in 5% decrements
-TARGET_GRID <- seq(N_OBS, floor(N_OBS * 0.70), by = -floor(N_OBS * 0.10))
+TARGET_GRID <- seq(N_OBS, floor(N_OBS * 0.60), by = -floor(N_OBS * 0.05))
 
 # --- 5. Core Method Parameters ---
 

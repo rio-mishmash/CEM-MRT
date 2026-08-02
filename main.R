@@ -17,6 +17,9 @@ source("R/07_plotting.R")
 # 3. Initialization
 all_results <- list()
 
+# Seed for the simulation block iterations
+set.seed(GLOBAL_SEED)
+
 # Define Scenarios to evaluate
 scenarios <- list(
   list(id = "Linear_High_Corr", func = gen_scen_high_corr, title = "Linear - High Correlation"),
@@ -26,8 +29,16 @@ scenarios <- list(
   list(id = "HTE",              func = gen_scen_hte,       title = "Heterogeneous Treatment Effect")
 )
 
+# Create output directories if needed
+if (!dir.exists(TABLE_PATH)) dir.create(TABLE_PATH, recursive = TRUE)
+if (!dir.exists(PLOT_PATH))  dir.create(PLOT_PATH,  recursive = TRUE)
+
+# Delete old files
+unlink(file.path(TABLE_PATH, "*"), recursive = TRUE)
+unlink(file.path(PLOT_PATH,  "*"), recursive = TRUE)
+
 # 4. Simulation Loop across Sample Sizes
-for (n_val in c(N_OBS)) {
+for (n_val in c(N_OBS, N_OBS*2)) {
   
   message(sprintf("\n>>> Starting Simulation Batch for Sample Size N = %d <<<", n_val))
   
@@ -37,26 +48,12 @@ for (n_val in c(N_OBS)) {
     
     # Execute simulation engine
     # Note: run_simulation_block uses future_lapply for parallel execution
-    res <- run_simulation_block(scen$func, 
-                                run_methods = c("PSM", "CEM", "CART"), 
-                                cutoff_percentiles=NULL) #seq(0.1, 0.9, by=0.2)
+    res <- run_simulation_block(scen$func, run_methods = c("PSM", "CEM", "CART", "RF", "MRT"))
     
     if (!is.null(res$Summary)) {
       # Store results in the global list
       result_key <- paste0(scen$id, "_N", n_val)
       all_results[[result_key]] <- res$Summary
-      
-      # Create output directories if needed
-      if (!dir.exists(TABLE_PATH)) dir.create(TABLE_PATH, recursive = TRUE)
-      if (!dir.exists(PLOT_PATH))  dir.create(PLOT_PATH,  recursive = TRUE)
-      
-      # Define output file paths
-      csv_file  <- paste0(TABLE_PATH, "summary_", result_key, ".csv")
-      plot_file <- paste0(PLOT_PATH,  "plot_",    result_key, ".png")
-      
-      # Remove existing files
-      if (file.exists(csv_file))  file.remove(csv_file)
-      if (file.exists(plot_file)) file.remove(plot_file)
       
       # Export summary table to CSV
       write.csv(res$Summary, 
@@ -76,6 +73,7 @@ for (n_val in c(N_OBS)) {
   }
 }
 
+
 # 2. Model Dependence Analysis
 message("\n>>> Running Model Dependence Analysis <<<")
 res_dep_high <- run_model_dependence_simulation(gen_scen_high_corr, N_OBS, N_SIM, N_OBS*0.8)
@@ -85,8 +83,9 @@ res_dep_comp <- run_model_dependence_simulation(gen_scen_complex,   N_OBS, N_SIM
 res_dep_high$Scenario <- "1.High Corr"; res_dep_low$Scenario <- "2.Low Corr"; res_dep_comp$Scenario <- "3.Complex"
 full_dep_res <- rbind(res_dep_high, res_dep_low, res_dep_comp)
 
-ggsave(paste0(PLOT_PATH, "plot_model_dependence.png"), 
+ggsave(paste0(PLOT_PATH, "plot_model_dependence.png"),
        build_model_dependence_plot(full_dep_res), width = 11, height = 3)
+
 
 # 3. MRT Sensitivity Analysis
 message("\n>>> Running MRT Sensitivity Analysis <<<")
@@ -99,18 +98,18 @@ gen_scen_sens <- function(n) { # Nonlinear scenario
 }
 
 # Execute across grids of num.trees, mtry, and min.node.size
-res_trees <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9, 
+res_trees <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9,
                                               expand.grid(num.trees = c(20, 30, 40, 50, 100), mtry = 3, min.node.size = 20))
 ggsave(paste0(PLOT_PATH, "sens_mrt_trees.png"), build_sensitivity_plot(res_trees, "num.trees"), width = 11, height = 3)
 
-res_mtry <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9, 
+res_mtry <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9,
                                              expand.grid(num.trees = 50, mtry = c(2, 3, 4, 5), min.node.size = 20))
 ggsave(paste0(PLOT_PATH, "sens_mrt_mtry.png"), build_sensitivity_plot(res_mtry, "mtry"), width = 11, height = 3)
 
-res_node <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9, 
+res_node <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9,
                                              expand.grid(num.trees = 50, mtry = 3, min.node.size = c(5, 10, 15, 20)))
 ggsave(paste0(PLOT_PATH, "sens_mrt_nodesize.png"), build_sensitivity_plot(res_node, "min.node.size"), width = 11, height = 3)
 
 
-beepr::beep(sound = 8, expr = NULL)
+beepr::beep(sound = 3, expr = NULL)
 message("\nWorkflow Complete.")

@@ -32,8 +32,8 @@ build_custom_plot <- function(sim_output, title_str = "", xlab_str = "Matched Sa
     temp_df$MetricLabel <- metrics_labels[i]
     
     p <- ggplot(temp_df, aes(x = Mean_N, y = Value, color = Method, shape = Method)) +
-      geom_line(linewidth = 1, alpha = 0.6) + 
-      geom_point(size = 2) +
+      geom_line(linewidth = 1.2, alpha = 0.4) + 
+      geom_point(size = 2.4, alpha = 0.6) +
       facet_wrap(~ MetricLabel) + 
       theme_bw() +
       scale_color_manual(
@@ -43,7 +43,7 @@ build_custom_plot <- function(sim_output, title_str = "", xlab_str = "Matched Sa
       ) +
       scale_shape_manual(
         name = "Method",
-        values = c("PSM" = 16, "CEM" = 17, "CART" = 18, "RF" = 15, "MRT" = 19), 
+        values = c("PSM" = 18, "CEM" = 19, "CART" = 18, "RF" = 18, "MRT" = 18), 
         guide = "none"
       ) +
       labs(y = if(i == 1) "Ratio (%)" else "", x = xlab_str) +
@@ -72,22 +72,41 @@ build_custom_plot <- function(sim_output, title_str = "", xlab_str = "Matched Sa
       tidyr::pivot_longer(cols = starts_with("X"), names_to = "Variable", values_to = "Value") %>% 
       dplyr::filter(Method %in% c("CART", "MRT"))
     
+    # Box Plot
     p_imp_graph <- ggplot(long_imp, aes(x = Variable, y = Value, fill = Method)) +
-      geom_boxplot(alpha = 0.7, outlier.size = 1) + 
+      geom_boxplot(alpha = 0.7, outlier.size = 1) +
       theme_bw() +
       scale_fill_manual(
         name = "Method",
-        values = c("CART" = "gold", "RF" = "orange", "MRT" = "red"), 
+        values = c("CART" = "gold", "RF" = "orange", "MRT" = "red"),
         guide = guide_legend(nrow = 1)
       ) +
-      labs(y = "Importance", x = "") + 
+      labs(y = "Importance", x = "") +
       facet_wrap(~ "5. Importance") +
       coord_flip(ylim = c(0, 1)) +
       theme(
         axis.text.y     = element_text(size = 12),
         strip.text      = element_text(size = 12),
-        legend.position = "bottom" 
+        legend.position = "bottom"
       )
+    
+    # ## Violin Plot
+    # p_imp_graph <- ggplot(long_imp, aes(x = Variable, y = Value, fill = Method)) +
+    #   geom_violin(alpha = 0.7, scale = "area") + 
+    #   theme_bw() +
+    #   scale_fill_manual(
+    #     name = "Method",
+    #     values = c("CART" = "gold", "RF" = "orange", "MRT" = "red"), 
+    #     guide = guide_legend(nrow = 1)
+    #   ) +
+    #   labs(y = "Importance", x = "") + 
+    #   facet_wrap(~ "5. Importance") +
+    #   coord_flip(ylim = c(0, 1)) +
+    #   theme(
+    #     axis.text.y     = element_text(size = 12),
+    #     strip.text      = element_text(size = 12),
+    #     legend.position = "bottom" 
+    #   )
     
     # Match the exact vertical structure of the metrics block
     p_imp <- patchwork::wrap_plots(
