@@ -42,13 +42,17 @@ for (n_val in c(N_OBS, N_OBS*2)) {
   
   message(sprintf("\n>>> Starting Simulation Batch for Sample Size N = %d <<<", n_val))
   
+  # Target Sample Size Grid
+  TARGET_GRID <- seq(n_val, floor(n_val * 0.60), by = -floor(n_val * 0.05))
+  
   for (scen in scenarios) {
     message(sprintf("Running Scenario: %s", scen$title))
     tictoc::tic(sprintf("Scenario: %s (N=%d)", scen$id, n_val))
     
     # Execute simulation engine
     # Note: run_simulation_block uses future_lapply for parallel execution
-    res <- run_simulation_block(scen$func, run_methods = c("PSM", "CEM", "CART", "RF", "MRT"))
+    res <- run_simulation_block(scen$func, n_val,
+                                run_methods = c("PSM", "CEM", "CART", "RF", "MRT"))
     
     if (!is.null(res$Summary)) {
       # Store results in the global list

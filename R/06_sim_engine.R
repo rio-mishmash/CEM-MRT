@@ -6,7 +6,7 @@
 #' @param gen_func Data generation function for the scenario (from 02_data_generation.R)
 #' @param run_methods Vector of method names to execute (e.g., c("PSM", "CART", "CEM"))
 #' @return A list containing Summary data frame and Importance data frame
-run_simulation_block <- function(gen_func, 
+run_simulation_block <- function(gen_func, n_obs,
                                  run_methods = c("PSM", "CEM", "CART", "RF", "MRT"),
                                  cutoff_percentiles = NULL) {
   
@@ -16,7 +16,7 @@ run_simulation_block <- function(gen_func,
       tryCatch({
         
         # Generate raw dataset for this iteration
-        df_sim_raw <- gen_func(N_OBS)
+        df_sim_raw <- gen_func(n_obs)
         df_sim_raw$id <- 1:nrow(df_sim_raw)
         x_vars <- grep("^X", names(df_sim_raw), value = TRUE)
         

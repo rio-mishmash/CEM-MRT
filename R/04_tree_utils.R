@@ -111,7 +111,8 @@ calculate_pruned_importance <- function(ranger_model, tree_indices, tree_info_li
 #' @param tree_info_list Output from prepare_tree_info
 #' @param df Data frame with covariates and treatment Z
 #' @param target_n The desired matched sample size
-prune_forest_to_target <- function(initial_nodes, tree_info_list, df, target_n) {
+#' @param tolerance Allowable shortfall from target_n to prevent over-pruning
+prune_forest_to_target <- function(initial_nodes, tree_info_list, df, target_n, tolerance = 10) {
   K <- length(tree_info_list)
   current_nodes <- as.matrix(initial_nodes)
   idx_z1 <- which(df$Z == 1)
@@ -179,7 +180,8 @@ prune_forest_to_target <- function(initial_nodes, tree_info_list, df, target_n) 
   best_diff <- abs(actual_n - target_n)
   best_snapshot <- list(strata = as.integer(factor(strata_chars)), actual_n = actual_n, final_nodes = current_nodes)
   
-  if (actual_n >= (target_n - 20) && actual_n <= (target_n + 20)) return(best_snapshot)
+  # Early return if actual_n is already within acceptable range (target_n - tolerance)
+  if (actual_n >= (target_n - tolerance)) return(best_snapshot)
   
   for (step in 1:length(branch_ranking)) {
     task <- branch_ranking[[step]]
@@ -210,12 +212,13 @@ prune_forest_to_target <- function(initial_nodes, tree_info_list, df, target_n) 
         best_snapshot <- list(strata = as.integer(factor(strata_chars)), actual_n = actual_n, final_nodes = current_nodes)
       }
       
-      # Early return if the sample size is within an acceptable window (+/- 10)
-      if (actual_n >= (target_n - 10) && actual_n <= (target_n + 10)) return(best_snapshot)
+      # Early return if the sample size reaches target_n - tolerance
+      if (actual_n >= (target_n - tolerance)) return(best_snapshot)
     }
   }
   return(best_snapshot)
 }
+
 
 #' Select the Most Representative Tree (MRT) using WSV Distance
 #' @param ranger_model A trained ranger random forest object
