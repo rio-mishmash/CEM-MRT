@@ -17,6 +17,9 @@ source("R/07_plotting.R")
 # 3. Initialization
 all_results <- list()
 
+# Seed for the simulation block iterations
+set.seed(GLOBAL_SEED)
+
 # Define Scenarios to evaluate
 scenarios <- list(
   list(id = "Linear_High_Corr", func = gen_scen_high_corr, title = "Linear - High Correlation"),
@@ -26,13 +29,21 @@ scenarios <- list(
   list(id = "HTE",              func = gen_scen_hte,       title = "Heterogeneous Treatment Effect")
 )
 
-# 4. Simulation Loop across Sample Sizes (N=200 and N=400)
+# Create output directories if needed
+if (!dir.exists(TABLE_PATH)) dir.create(TABLE_PATH, recursive = TRUE)
+if (!dir.exists(PLOT_PATH))  dir.create(PLOT_PATH,  recursive = TRUE)
+
+# Delete old files
+unlink(file.path(TABLE_PATH, "*"), recursive = TRUE)
+unlink(file.path(PLOT_PATH,  "*"), recursive = TRUE)
+
+# 4. Simulation Loop across Sample Sizes
 for (n_val in c(N_OBS, N_OBS*2)) {
   
-  # Update global parameters for the current loop
-  TARGET_GRID <<- seq(n_val, floor(n_val * 0.50), by = -floor(n_val * 0.05))
-  
   message(sprintf("\n>>> Starting Simulation Batch for Sample Size N = %d <<<", n_val))
+  
+  # Target Sample Size Grid
+  TARGET_GRID <- seq(n_val, floor(n_val * 0.60), by = -floor(n_val * 0.05))
   
   for (scen in scenarios) {
     message(sprintf("Running Scenario: %s", scen$title))
@@ -40,7 +51,8 @@ for (n_val in c(N_OBS, N_OBS*2)) {
     
     # Execute simulation engine
     # Note: run_simulation_block uses future_lapply for parallel execution
-    res <- run_simulation_block(scen$func)
+    res <- run_simulation_block(scen$func, n_val,
+                                run_methods = c("PSM", "CEM", "CART", "RF", "MRT"))
     
     if (!is.null(res$Summary)) {
       # Store results in the global list
@@ -57,8 +69,6 @@ for (n_val in c(N_OBS, N_OBS*2)) {
       ggsave(filename = paste0(PLOT_PATH, "plot_", result_key, ".png"), 
              plot = p, width = 12, height = 4)
       
-      # Print sample of the result table to console
-      print(head(res$Summary))
     } else {
       warning(sprintf("Simulation failed for Scenario: %s", scen$id))
     }
@@ -66,6 +76,7 @@ for (n_val in c(N_OBS, N_OBS*2)) {
     tictoc::toc()
   }
 }
+
 
 # 2. Model Dependence Analysis
 message("\n>>> Running Model Dependence Analysis <<<")
@@ -76,8 +87,9 @@ res_dep_comp <- run_model_dependence_simulation(gen_scen_complex,   N_OBS, N_SIM
 res_dep_high$Scenario <- "1.High Corr"; res_dep_low$Scenario <- "2.Low Corr"; res_dep_comp$Scenario <- "3.Complex"
 full_dep_res <- rbind(res_dep_high, res_dep_low, res_dep_comp)
 
-ggsave(paste0(PLOT_PATH, "plot_model_dependence.png"), 
+ggsave(paste0(PLOT_PATH, "plot_model_dependence.png"),
        build_model_dependence_plot(full_dep_res), width = 11, height = 3)
+
 
 # 3. MRT Sensitivity Analysis
 message("\n>>> Running MRT Sensitivity Analysis <<<")
@@ -90,16 +102,18 @@ gen_scen_sens <- function(n) { # Nonlinear scenario
 }
 
 # Execute across grids of num.trees, mtry, and min.node.size
-res_trees <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9, 
+res_trees <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9,
                                               expand.grid(num.trees = c(20, 30, 40, 50, 100), mtry = 3, min.node.size = 20))
 ggsave(paste0(PLOT_PATH, "sens_mrt_trees.png"), build_sensitivity_plot(res_trees, "num.trees"), width = 11, height = 3)
 
-res_mtry <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9, 
+res_mtry <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9,
                                              expand.grid(num.trees = 50, mtry = c(2, 3, 4, 5), min.node.size = 20))
 ggsave(paste0(PLOT_PATH, "sens_mrt_mtry.png"), build_sensitivity_plot(res_mtry, "mtry"), width = 11, height = 3)
 
-res_node <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9, 
+res_node <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9,
                                              expand.grid(num.trees = 50, mtry = 3, min.node.size = c(5, 10, 15, 20)))
 ggsave(paste0(PLOT_PATH, "sens_mrt_nodesize.png"), build_sensitivity_plot(res_node, "min.node.size"), width = 11, height = 3)
 
+
+beepr::beep(sound = 3, expr = NULL)
 message("\nWorkflow Complete.")
