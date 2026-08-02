@@ -84,7 +84,9 @@ res_dep_high <- run_model_dependence_simulation(gen_scen_high_corr, N_OBS, N_SIM
 res_dep_low  <- run_model_dependence_simulation(gen_scen_low_corr,  N_OBS, N_SIM, N_OBS*0.8)
 res_dep_comp <- run_model_dependence_simulation(gen_scen_complex,   N_OBS, N_SIM, N_OBS*0.8)
 
-res_dep_high$Scenario <- "1.High Corr"; res_dep_low$Scenario <- "2.Low Corr"; res_dep_comp$Scenario <- "3.Complex"
+res_dep_high$Scenario <- "1.High Corr"; 
+res_dep_low$Scenario  <- "2.Low Corr"; 
+res_dep_comp$Scenario <- "3.Complex"
 full_dep_res <- rbind(res_dep_high, res_dep_low, res_dep_comp)
 
 ggsave(paste0(PLOT_PATH, "plot_model_dependence.png"),

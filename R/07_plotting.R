@@ -157,7 +157,7 @@ build_model_dependence_plot <- function(full_dep_res) {
   
   ggplot(full_dep_long, aes(x = Method, y = Estimate_Range, fill = Method)) +
     geom_violin(alpha = 0.3, trim = TRUE) +
-    scale_y_continuous(limits = c(0, 3)) +
+    scale_y_continuous(limits = c(0, 3.6)) +
     facet_wrap(~ Scenario, scales = "free_y") +
     theme_bw() +
     theme(

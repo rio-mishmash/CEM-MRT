@@ -254,13 +254,20 @@ run_model_dependence_simulation <- function(gen_func, n_obs, n_sim, target_n) {
       
       # Propensity Score estimation remains constant (using all base variables)
       x_vars_all <- grep("^X", names(df), value = TRUE)
-      ps_formula <- as.formula(paste("as.factor(Z) ~", paste(x_vars_all, collapse = " + ")))
+      ps_formula <- as.formula(paste("Z ~", paste(x_vars_all, collapse = " + ")))
       
-      # Fit PS model and calculate scores
-      m_ps_glm <- glm(formula = ps_formula, data = df, family = binomial(link = "logit"))
-      df$ps.est <- predict(m_ps_glm, type = "response")
+      # # Fit PS model and calculate scores
+      # m_ps_glm <- glm(formula = ps_formula, data = df, family = binomial(link = "logit"))
+      # df$ps.est <- predict(m_ps_glm, type = "response")
+      
+      ## random forest
+      m_ps_rf   <- ranger::ranger(ps_formula, data = df, splitrule = "variance", num.threads = 1,
+                                  min.node.size = MIN_NODE_SIZE, num.trees = NUM_TREES_RF,
+                                  mtry = MTRY_DEFAULT, max.depth = MAX_DEPTH_RF, node.stats = FALSE)
+      df$ps.est <- predict(m_ps_rf, df)$predictions
       
       # Train forest and select the Most Representative Tree (MRT)
+      ps_formula <- as.formula(paste("as.factor(Z) ~", paste(x_vars_all, collapse = " + ")))
       forest_mrt <- ranger::ranger(ps_formula, data = df, splitrule = "gini", num.threads = 1,
                                    num.trees = 100, mtry = 3, min.node.size = 0.05 * nrow(df), 
                                    replace = TRUE)
