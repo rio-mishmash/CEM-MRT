@@ -21,7 +21,7 @@ build_custom_plot <- function(sim_output, title_str = "", xlab_str = "Matched Sa
   plot_sub$Method <- factor(plot_sub$Method, levels = c("PSM", "CEM", "CART", "RF", "MRT"))
   
   # Metrics as defined in project configuration
-  metrics_labels <- c("1. MD", "2. Bias", "3. CI Width", "4. MSE")
+  metrics_labels <- c("1. MD", "2. Bias", "3. CIW", "4. MSE")
   p_list <- list()
   
   for (i in 1:4) {
@@ -64,11 +64,11 @@ build_custom_plot <- function(sim_output, title_str = "", xlab_str = "Matched Sa
     p_list[[i]] <- p
   }
   
-  # 2. Prepare Variable Importance Plot
+  # 2. Prepare Variable Importance Plot (at 80% N)
+  N_all <- unique(imp_df$Target_N)[1]
   if (!is.null(imp_df) && nrow(imp_df) > 0) {
-    target_1 <- unique(imp_df$Target_N)[1]
     long_imp <- imp_df %>% 
-      dplyr::filter(Target_N == target_1) %>% 
+      dplyr::filter(Target_N == N_all*0.80) %>% 
       tidyr::pivot_longer(cols = starts_with("X"), names_to = "Variable", values_to = "Value") %>% 
       dplyr::filter(Method %in% c("CART", "MRT"))
     
@@ -182,12 +182,12 @@ build_sensitivity_plot <- function(res_df, color_var, xlab_str = "Matched Sample
   
   df1 <- data.frame(Mean_N = res_df$Mean_N, Color_Val = res_df[[color_var]], Value = res_df$MD_Ratio,   Metric = "1. MD")
   df2 <- data.frame(Mean_N = res_df$Mean_N, Color_Val = res_df[[color_var]], Value = res_df$Bias_Ratio, Metric = "2. Bias")
-  df3 <- data.frame(Mean_N = res_df$Mean_N, Color_Val = res_df[[color_var]], Value = res_df$CI_Ratio,   Metric = "3. CI Width")
+  df3 <- data.frame(Mean_N = res_df$Mean_N, Color_Val = res_df[[color_var]], Value = res_df$CI_Ratio,   Metric = "3. CIW")
   df4 <- data.frame(Mean_N = res_df$Mean_N, Color_Val = res_df[[color_var]], Value = res_df$MSE_Ratio,  Metric = "4. MSE")
   long_df <- rbind(df1, df2, df3, df4)
   
   metrics <- unique(long_df$Metric)
-  hline_vals <- c("1. MD" = 0, "2. Bias" = 0, "3. CI Width" = 100, "4. MSE" = 0)
+  hline_vals <- c("1. MD" = 0, "2. Bias" = 0, "3. CIW" = 100, "4. MSE" = 0)
   p_list <- list()
   
   for (i in 1:4) {
@@ -197,7 +197,7 @@ build_sensitivity_plot <- function(res_df, color_var, xlab_str = "Matched Sample
       geom_point(shape = 16, size = 2.5, alpha = 0.7) +
       facet_wrap(~ Metric) +
       geom_hline(yintercept = hline_vals[m], linetype = "dashed", color = "gray40") +
-      scale_color_gradient(low = "gold", high = "red", name = color_var) +
+      scale_color_gradient(low = "red", high = "gold", name = color_var) +
       theme_bw() +
       theme(
         strip.text      = element_text(size = 11),
@@ -208,7 +208,7 @@ build_sensitivity_plot <- function(res_df, color_var, xlab_str = "Matched Sample
       scale_x_continuous(limits = c(160, 200)) +
       labs(y = if(i == 1) "Ratio (%)" else "", x = xlab_str)
     
-    if (m == "3. CI Width") {
+    if (m == "3. CIW") {
       p <- p + scale_y_continuous(limits = c(100, 150))
     } else {
       p <- p + scale_y_continuous(limits = c(0, 100))

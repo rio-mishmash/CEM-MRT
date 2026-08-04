@@ -67,7 +67,7 @@ for (n_val in c(N_OBS, N_OBS*2)) {
       # Generate and save the visualization (Metrics + Importance)
       p <- build_custom_plot(res, scen$title)
       ggsave(filename = paste0(PLOT_PATH, "plot_", result_key, ".png"), 
-             plot = p, width = 12, height = 4)
+             plot = p, width = 12, height = 3.6)
       
     } else {
       warning(sprintf("Simulation failed for Scenario: %s", scen$id))

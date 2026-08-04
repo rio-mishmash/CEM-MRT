@@ -5,7 +5,7 @@
 #' Generate Base Covariates
 #' @param n Sample size
 #' @param rho Correlation coefficient among variables
-#' @return A data frame with 5 covariates (X1-X2 continuous, X3-X5 binary)
+#' @return A data frame with covariates
 generate_base_df <- function(n, rho = 0) {
   mu <- rep(0, 5)
   Sigma <- matrix(rho, nrow = 5, ncol = 5)
