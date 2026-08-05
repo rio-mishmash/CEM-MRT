@@ -52,7 +52,8 @@ for (n_val in c(N_OBS, N_OBS*2)) {
     # Execute simulation engine
     # Note: run_simulation_block uses future_lapply for parallel execution
     res <- run_simulation_block(scen$func, n_val,
-                                run_methods = c("PSM", "CEM", "CART", "RF", "MRT"))
+                                run_methods = c("PSM", "CEM", "CART", "RF", "MRT"),
+                                cutoff_percentiles = seq(0.1, 0.9, by=0.05))
     
     if (!is.null(res$Summary)) {
       # Store results in the global list
