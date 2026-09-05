@@ -107,15 +107,15 @@ gen_scen_sens <- function(n) { # Nonlinear scenario
 # Execute across grids of num.trees, mtry, and min.node.size
 res_trees <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9,
                                               expand.grid(num.trees = c(20, 30, 40, 50, 100), mtry = 3, min.node.size = 20))
-ggsave(paste0(PLOT_PATH, "sens_mrt_trees.png"), build_sensitivity_plot(res_trees, "num.trees"), width = 11, height = 3)
+ggsave(paste0(PLOT_PATH, "sens_mrt_trees.png"), build_sensitivity_plot(res_trees, "num.trees"), width = 11, height = 2.4)
 
 res_mtry <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9,
                                              expand.grid(num.trees = 50, mtry = c(2, 3, 4, 5), min.node.size = 20))
-ggsave(paste0(PLOT_PATH, "sens_mrt_mtry.png"), build_sensitivity_plot(res_mtry, "mtry"), width = 11, height = 3)
+ggsave(paste0(PLOT_PATH, "sens_mrt_mtry.png"), build_sensitivity_plot(res_mtry, "mtry"), width = 11, height = 2.4)
 
 res_node <- run_sensitivity_simulation_block(gen_scen_sens, N_OBS*0.9,
                                              expand.grid(num.trees = 50, mtry = 3, min.node.size = c(5, 10, 15, 20)))
-ggsave(paste0(PLOT_PATH, "sens_mrt_nodesize.png"), build_sensitivity_plot(res_node, "min.node.size"), width = 11, height = 3)
+ggsave(paste0(PLOT_PATH, "sens_mrt_nodesize.png"), build_sensitivity_plot(res_node, "min.node.size"), width = 11, height = 2.4)
 
 
 beepr::beep(sound = 3, expr = NULL)

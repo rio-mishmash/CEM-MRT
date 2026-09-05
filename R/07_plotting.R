@@ -21,11 +21,11 @@ build_custom_plot <- function(sim_output, title_str = "", xlab_str = "Matched Sa
   plot_sub$Method <- factor(plot_sub$Method, levels = c("PSM", "CEM", "CART", "RF", "MRT"))
   
   # Metrics as defined in project configuration
-  metrics_labels <- c("1. MD", "2. Bias", "3. CIW", "4. MSE")
+  metrics_labels <- c("1. MD", "2. Bias", "3. CIW", "4. Coverage", "5. MSE")
   p_list <- list()
   
-  for (i in 1:4) {
-    val_col <- switch(i, "MD_Ratio", "Bias_Ratio", "CI_Ratio", "MSE_Ratio")
+  for (i in 1:5) {
+    val_col <- switch(i, "MD_Ratio", "Bias_Ratio", "CI_Ratio", "Coverage", "MSE_Ratio")
     
     temp_df <- plot_sub
     temp_df$Value <- as.numeric(temp_df[[val_col]])
@@ -49,11 +49,12 @@ build_custom_plot <- function(sim_output, title_str = "", xlab_str = "Matched Sa
       labs(y = if(i == 1) "Ratio (%)" else "", x = xlab_str) +
       theme(
         plot.title      = element_text(size = 12, face = "bold"),
-        axis.title.x    = element_text(size = 11),
+        axis.title.x    = element_text(size = 10.5),
         axis.title.y    = element_text(size = 11),
-        axis.text.x     = element_text(size = 11),
-        axis.text.y     = element_text(size = 12),
-        strip.text      = element_text(size = 12),
+        axis.text.x     = element_text(size = 10.5),
+        axis.text.y     = element_text(size = 11),
+        strip.text      = element_text(size = 11),
+        legend.text     = element_text(size = 11),
         legend.position = "bottom" 
       )
     
@@ -61,7 +62,10 @@ build_custom_plot <- function(sim_output, title_str = "", xlab_str = "Matched Sa
     y_lims <- if (i == 3) c(90, 160) else c(0, 100)
     
     p <- p + coord_cartesian(xlim = x_lims, ylim = y_lims)
-    p_list[[i]] <- p
+    p_list[[i]] <- p +
+      ggplot2::theme(
+        plot.margin = ggplot2::margin(t = 5, r = 5, b = 5, l = 2)
+      )
   }
   
   # 2. Prepare Variable Importance Plot (at 80% N)
@@ -82,12 +86,20 @@ build_custom_plot <- function(sim_output, title_str = "", xlab_str = "Matched Sa
         guide = guide_legend(nrow = 1)
       ) +
       labs(y = "Importance", x = "") +
-      facet_wrap(~ "5. Importance") +
+      facet_wrap(~ "Importance") +
       coord_flip(ylim = c(0, 1)) +
       theme(
-        axis.text.y     = element_text(size = 12),
-        strip.text      = element_text(size = 12),
-        legend.position = "bottom"
+        plot.title      = element_text(size = 12, face = "bold"),
+        axis.title.x    = element_text(size = 10.5),
+        axis.title.y    = element_text(size = 12),
+        axis.text.x     = element_text(size = 10.5),
+        axis.text.y     = element_text(size = 10.5),
+        strip.text      = element_text(size = 11),
+        legend.text     = element_text(size = 11),
+        legend.position = "bottom" 
+      ) +
+      ggplot2::theme(
+        plot.margin = ggplot2::margin(t = 5, r = 5, b = 5, l = 0)
       )
     
     # ## Violin Plot
@@ -124,7 +136,7 @@ build_custom_plot <- function(sim_output, title_str = "", xlab_str = "Matched Sa
   # 3. Combine with patchwork (Perfectly synchronized layout)
   
   # Block A: 4 metric plots with a forced guide_area at the bottom
-  p_metrics_graphs <- patchwork::wrap_plots(p_list[1:4], ncol = 4)
+  p_metrics_graphs <- patchwork::wrap_plots(p_list[1:5], ncol = 5)
   
   p_metrics <- patchwork::wrap_plots(
     p_metrics_graphs, 
@@ -138,7 +150,7 @@ build_custom_plot <- function(sim_output, title_str = "", xlab_str = "Matched Sa
   
   # Final assembly: Because both blocks share the exact same structural dimensions, 
   # their panel heights and widths will align flawlessly when combined horizontally.
-  final_plot <- patchwork::wrap_plots(p_metrics, p_imp, ncol = 2, widths = c(4, 1))
+  final_plot <- patchwork::wrap_plots(p_metrics, p_imp, ncol = 2, widths = c(5, 1))
     #patchwork::plot_annotation(title = title_str)
   
   return(final_plot)
@@ -164,6 +176,7 @@ build_model_dependence_plot <- function(full_dep_res) {
       axis.text.x      = element_text(size = 11),
       axis.text.y      = element_text(size = 12),
       strip.text       = element_text(size = 12),
+      legend.text     = element_text(size = 11),
       legend.title     = element_blank(),
       legend.position  = "right"
     ) +
@@ -183,14 +196,15 @@ build_sensitivity_plot <- function(res_df, color_var, xlab_str = "Matched Sample
   df1 <- data.frame(Mean_N = res_df$Mean_N, Color_Val = res_df[[color_var]], Value = res_df$MD_Ratio,   Metric = "1. MD")
   df2 <- data.frame(Mean_N = res_df$Mean_N, Color_Val = res_df[[color_var]], Value = res_df$Bias_Ratio, Metric = "2. Bias")
   df3 <- data.frame(Mean_N = res_df$Mean_N, Color_Val = res_df[[color_var]], Value = res_df$CI_Ratio,   Metric = "3. CIW")
-  df4 <- data.frame(Mean_N = res_df$Mean_N, Color_Val = res_df[[color_var]], Value = res_df$MSE_Ratio,  Metric = "4. MSE")
-  long_df <- rbind(df1, df2, df3, df4)
+  df4 <- data.frame(Mean_N = res_df$Mean_N, Color_Val = res_df[[color_var]], Value = res_df$Coverage,   Metric = "4. Coverage")
+  df5 <- data.frame(Mean_N = res_df$Mean_N, Color_Val = res_df[[color_var]], Value = res_df$MSE_Ratio,  Metric = "5. MSE")
+  long_df <- rbind(df1, df2, df3, df4, df5)
   
   metrics <- unique(long_df$Metric)
-  hline_vals <- c("1. MD" = 0, "2. Bias" = 0, "3. CIW" = 100, "4. MSE" = 0)
+  hline_vals <- c("1. MD" = 0, "2. Bias" = 0, "3. CIW" = 100, "4. COverage" = 100, "5. MSE" = 0)
   p_list <- list()
   
-  for (i in 1:4) {
+  for (i in 1:5) {
     m <- metrics[i]
     sub_df <- subset(long_df, Metric == m)
     p <- ggplot(sub_df, aes(x = Mean_N, y = Value, color = Color_Val)) +
@@ -200,10 +214,12 @@ build_sensitivity_plot <- function(res_df, color_var, xlab_str = "Matched Sample
       scale_color_gradient(low = "red", high = "gold", name = color_var) +
       theme_bw() +
       theme(
-        strip.text      = element_text(size = 11),
-        axis.text.y     = element_text(size = 12),
+        axis.text.x      = element_text(size = 11),
+        axis.text.y      = element_text(size = 12),
+        strip.text       = element_text(size = 12),
+        legend.text     = element_text(size = 11),
         legend.title     = element_blank(),
-        legend.position = "right" # Legend on the right
+        legend.position  = "right"
       ) +
       scale_x_continuous(limits = c(160, 200)) +
       labs(y = if(i == 1) "Ratio (%)" else "", x = xlab_str)
@@ -216,7 +232,7 @@ build_sensitivity_plot <- function(res_df, color_var, xlab_str = "Matched Sample
     p_list[[i]] <- p
   }
   
-  wrap_plots(p_list, ncol = 4) + 
+  wrap_plots(p_list, ncol = 5) + 
     plot_layout(guides = "collect") + 
     theme(legend.position = "right")
 }
