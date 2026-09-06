@@ -48,6 +48,7 @@ METRIC_LABELS <- c("1. MD", "2. Bias", "3. CI Width", "4. MSE")
 # --- Package List ---
 # Required packages for the simulation
 REQUIRED_PACKAGES <- c(
+  "ggh4x",        # graph panels
   "geepack",      # Generalized Estimating Equations (GEE)
   "ranger",       # Fast Random Forest implementation
   "future.apply", # Parallel processing

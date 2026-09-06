@@ -5,156 +5,169 @@
 #' Build Custom Comparison Plot (Metrics + Importance)
 #' @param sim_output List containing 'Summary' and 'Importance' data frames
 #' @param title_str Title for the plot
-#' @param xlab_str Label for the X-axis (Matched Sample Size)
+#' @param xlab_str Label for the X-axis (N (matched))
 #' @return A patchwork object combining metrics and importance plots
-build_custom_plot <- function(sim_output, title_str = "", xlab_str = "Matched Sample Size") {
-  library(patchwork)
-  library(tidyr)
-  library(ggplot2)
-  library(dplyr)
-  
+build_custom_plot <- function(sim_output, title_str = "", xlab_str = "N (matched)") {
+
   res_df <- sim_output$Summary
   imp_df <- sim_output$Importance
   
-  # 1. Prepare Data for Metric Plots
-  plot_sub <- res_df %>% dplyr::filter(Method != "Naive")
-  plot_sub$Method <- factor(plot_sub$Method, levels = c("PSM", "CEM", "CART", "RF", "MRT"))
+  # Prepare metric data
+  metric_names <- c("MD_Ratio", "Bias_Ratio", "CI_Ratio", "Coverage", "MSE_Ratio")
+  metric_labels <- c("1. MD", "2. Bias", "3. CIW", "4. Coverage", "5. MSE")
   
-  # Metrics as defined in project configuration
-  metrics_labels <- c("1. MD", "2. Bias", "3. CIW", "4. Coverage", "5. MSE")
-  p_list <- list()
+  plot_sub <- res_df %>%
+    filter(Method != "Naive") %>%
+    mutate(
+      Method = factor(Method, levels = c("PSM", "CEM", "CART", "RF", "MRT")),
+      across(all_of(metric_names), as.numeric)
+    )
   
-  for (i in 1:5) {
-    val_col <- switch(i, "MD_Ratio", "Bias_Ratio", "CI_Ratio", "Coverage", "MSE_Ratio")
+  metric_df <- plot_sub %>%
+    pivot_longer(
+      cols = all_of(metric_names),
+      names_to = "Metric",
+      values_to = "Value"
+    ) %>%
+    mutate(
+      MetricLabel = recode(
+        Metric,
+        "MD_Ratio" = "1. MD",
+        "Bias_Ratio" = "2. Bias",
+        "CI_Ratio" = "3. CIW",
+        "Coverage" = "4. Coverage",
+        "MSE_Ratio" = "5. MSE"
+      ),
+      MetricLabel = factor(MetricLabel, levels = metric_labels)
+    )
+  
+  x_lims <- if (exists("Nobs", inherits = TRUE)) {
+    n_obs <- get("Nobs", inherits = TRUE)
+    c(n_obs * 0.60, n_obs)
+  } else {
+    NULL
+  }
+  
+  # Create metric panels
+  p_list <- lapply(seq_along(metric_labels), function(i) {
+    metric_i <- metric_labels[i]
+    sub_df <- metric_df %>% filter(MetricLabel == metric_i)
+    y_lims <- if (metric_i == "3. CIW") c(90, 160) else c(0, 100)
     
-    temp_df <- plot_sub
-    temp_df$Value <- as.numeric(temp_df[[val_col]])
-    temp_df$MetricLabel <- metrics_labels[i]
-    
-    p <- ggplot(temp_df, aes(x = Mean_N, y = Value, color = Method, shape = Method)) +
-      geom_line(linewidth = 1.2, alpha = 0.4) + 
-      geom_point(size = 2.4, alpha = 0.6) +
-      facet_wrap(~ MetricLabel) + 
-      theme_bw() +
+    ggplot(sub_df, aes(x = Mean_N, y = Value, color = Method, shape = Method)) +
+      geom_line(linewidth = 1.4, alpha = 0.5) +
+      geom_point(size = 1.8, alpha = 0.5) +
+      facet_wrap(~ MetricLabel) +
       scale_color_manual(
         name = "Method",
-        values = c("PSM" = "steelblue", "CEM" = "limegreen", "CART" = "gold", "RF" = "orange", "MRT" = "red"),
+        values = c(
+          "PSM" = "steelblue",
+          "CEM" = "limegreen",
+          "CART" = "gold",
+          "RF" = "orange",
+          "MRT" = "red"
+        ),
         guide = guide_legend(nrow = 1)
       ) +
       scale_shape_manual(
         name = "Method",
-        values = c("PSM" = 18, "CEM" = 19, "CART" = 18, "RF" = 18, "MRT" = 18), 
+        values = c("PSM" = 18, "CEM" = 19, "CART" = 18, "RF" = 18, "MRT" = 18),
         guide = "none"
       ) +
-      labs(y = if(i == 1) "Ratio (%)" else "", x = xlab_str) +
-      theme(
-        plot.title      = element_text(size = 12, face = "bold"),
-        axis.title.x    = element_text(size = 10.5),
-        axis.title.y    = element_text(size = 11),
-        axis.text.x     = element_text(size = 10.5),
-        axis.text.y     = element_text(size = 11),
-        strip.text      = element_text(size = 11),
-        legend.text     = element_text(size = 11),
-        legend.position = "bottom" 
-      )
-    
-    x_lims <- if (exists("Nobs")) c(Nobs * 0.60, Nobs) else NULL
-    y_lims <- if (i == 3) c(90, 160) else c(0, 100)
-    
-    p <- p + coord_cartesian(xlim = x_lims, ylim = y_lims)
-    p_list[[i]] <- p +
-      ggplot2::theme(
-        plot.margin = ggplot2::margin(t = 5, r = 5, b = 5, l = 2)
-      )
-  }
-  
-  # 2. Prepare Variable Importance Plot (at 80% N)
-  N_all <- unique(imp_df$Target_N)[1]
-  if (!is.null(imp_df) && nrow(imp_df) > 0) {
-    long_imp <- imp_df %>% 
-      dplyr::filter(Target_N == N_all*0.80) %>% 
-      tidyr::pivot_longer(cols = starts_with("X"), names_to = "Variable", values_to = "Value") %>% 
-      dplyr::filter(Method %in% c("CART", "MRT"))
-    
-    # Box Plot
-    p_imp_graph <- ggplot(long_imp, aes(x = Variable, y = Value, fill = Method)) +
-      geom_boxplot(alpha = 0.7, outlier.size = 1) +
+      coord_cartesian(xlim = x_lims, ylim = y_lims) +
+      labs(
+        x = xlab_str,
+        y = if (i == 1) "Ratio / Proportion (%)" else ""
+      ) +
       theme_bw() +
+      theme(
+        axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text.x = element_text(size = 11),
+        axis.text.y = element_text(size = 12),
+        strip.text = element_text(size = 14),
+        legend.text = element_text(size = 12),
+        legend.position = "bottom",
+        plot.margin = margin(t = 5, r = 5, b = 5, l = 1)
+      )
+  })
+  
+  p_metrics_graphs <- wrap_plots(p_list, ncol = 5)
+  
+  p_metrics <- wrap_plots(
+    p_metrics_graphs,
+    guide_area(),
+    ncol = 1,
+    heights = c(10, 1)
+  ) +
+    plot_layout(guides = "collect")
+  
+  # Create variable-importance panel
+  if (!is.null(imp_df) && nrow(imp_df) > 0) {
+    n_all <- unique(imp_df$Target_N)[1]
+    
+    long_imp <- imp_df %>%
+      filter(near(Target_N, n_all * 0.80)) %>%
+      pivot_longer(
+        cols = starts_with("X"),
+        names_to = "Variable",
+        values_to = "Value"
+      ) %>%
+      filter(Method %in% c("CART", "MRT"))
+    
+    p_imp_graph <- ggplot(
+      long_imp,
+      aes(x = Variable, y = Value, fill = Method)
+    ) +
+      geom_boxplot(alpha = 0.7, outlier.size = 1) +
       scale_fill_manual(
         name = "Method",
-        values = c("CART" = "gold", "RF" = "orange", "MRT" = "red"),
+        values = c("CART" = "gold", "MRT" = "red"),
         guide = guide_legend(nrow = 1)
       ) +
-      labs(y = "Importance", x = "") +
+      labs(x = "", y = "Importance") +
       facet_wrap(~ "Importance") +
       coord_flip(ylim = c(0, 1)) +
+      theme_bw() +
       theme(
-        plot.title      = element_text(size = 12, face = "bold"),
-        axis.title.x    = element_text(size = 10.5),
-        axis.title.y    = element_text(size = 12),
-        axis.text.x     = element_text(size = 10.5),
-        axis.text.y     = element_text(size = 10.5),
-        strip.text      = element_text(size = 11),
-        legend.text     = element_text(size = 11),
-        legend.position = "bottom" 
-      ) +
-      ggplot2::theme(
-        plot.margin = ggplot2::margin(t = 5, r = 5, b = 5, l = 0)
+        axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text.x = element_text(size = 11),
+        axis.text.y = element_text(size = 12),
+        strip.text = element_text(size = 14),
+        legend.text = element_text(size = 12),
+        legend.position = "bottom",
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 0)
       )
     
-    # ## Violin Plot
-    # p_imp_graph <- ggplot(long_imp, aes(x = Variable, y = Value, fill = Method)) +
-    #   geom_violin(alpha = 0.7, scale = "area") + 
-    #   theme_bw() +
-    #   scale_fill_manual(
-    #     name = "Method",
-    #     values = c("CART" = "gold", "RF" = "orange", "MRT" = "red"), 
-    #     guide = guide_legend(nrow = 1)
-    #   ) +
-    #   labs(y = "Importance", x = "") + 
-    #   facet_wrap(~ "5. Importance") +
-    #   coord_flip(ylim = c(0, 1)) +
-    #   theme(
-    #     axis.text.y     = element_text(size = 12),
-    #     strip.text      = element_text(size = 12),
-    #     legend.position = "bottom" 
-    #   )
-    
-    # Match the exact vertical structure of the metrics block
-    p_imp <- patchwork::wrap_plots(
+    p_imp <- wrap_plots(
       p_imp_graph,
-      patchwork::guide_area(),
+      guide_area(),
       ncol = 1,
       heights = c(10, 1)
-    ) + patchwork::plot_layout(guides = "collect")
-    
+    ) +
+      plot_layout(guides = "collect")
   } else {
     p_imp_graph <- ggplot() + theme_void()
-    p_imp <- patchwork::wrap_plots(p_imp_graph, patchwork::guide_area(), ncol = 1, heights = c(10, 1))
+    p_imp <- wrap_plots(
+      p_imp_graph,
+      guide_area(),
+      ncol = 1,
+      heights = c(10, 1)
+    )
   }
   
-  # 3. Combine with patchwork (Perfectly synchronized layout)
-  
-  # Block A: 4 metric plots with a forced guide_area at the bottom
-  p_metrics_graphs <- patchwork::wrap_plots(p_list[1:5], ncol = 5)
-  
-  p_metrics <- patchwork::wrap_plots(
-    p_metrics_graphs, 
-    patchwork::guide_area(), 
-    ncol = 1, 
-    heights = c(10, 1)
-  ) + 
-    patchwork::plot_layout(guides = "collect")
-  
-  # Block B: The importance plot (p_imp) now has the identical 10:1 structure as Block A
-  
-  # Final assembly: Because both blocks share the exact same structural dimensions, 
-  # their panel heights and widths will align flawlessly when combined horizontally.
-  final_plot <- patchwork::wrap_plots(p_metrics, p_imp, ncol = 2, widths = c(5, 1))
-    #patchwork::plot_annotation(title = title_str)
+  # Combine both blocks
+  final_plot <- wrap_plots(
+    p_metrics,
+    p_imp,
+    ncol = 2,
+    widths = c(5, 1)
+  )
   
   return(final_plot)
 }
+
 
 
 #' Build Model Dependence Violin Plot
@@ -173,10 +186,12 @@ build_model_dependence_plot <- function(full_dep_res) {
     facet_wrap(~ Scenario, scales = "free_y") +
     theme_bw() +
     theme(
-      axis.text.x      = element_text(size = 11),
-      axis.text.y      = element_text(size = 12),
-      strip.text       = element_text(size = 12),
-      legend.text     = element_text(size = 11),
+      axis.title.x = element_text(size = 14),
+      axis.title.y = element_text(size = 14),
+      axis.text.x = element_text(size = 11),
+      axis.text.y = element_text(size = 12),
+      strip.text = element_text(size = 14),
+      legend.text = element_text(size = 12),
       legend.title     = element_blank(),
       legend.position  = "right"
     ) +
@@ -189,7 +204,7 @@ build_model_dependence_plot <- function(full_dep_res) {
 #' @param color_var Name of the parameter to color by (e.g., 'num.trees')
 #' @param xlab_str Label for the X-axis
 #' @return A patchwork object with sensitivity metrics
-build_sensitivity_plot <- function(res_df, color_var, xlab_str = "Matched Sample Size") {
+build_sensitivity_plot <- function(res_df, color_var, xlab_str = "N (matched)") {
   library(ggplot2)
   library(patchwork)
   
@@ -201,7 +216,7 @@ build_sensitivity_plot <- function(res_df, color_var, xlab_str = "Matched Sample
   long_df <- rbind(df1, df2, df3, df4, df5)
   
   metrics <- unique(long_df$Metric)
-  hline_vals <- c("1. MD" = 0, "2. Bias" = 0, "3. CIW" = 100, "4. COverage" = 100, "5. MSE" = 0)
+  hline_vals <- c("1. MD" = 0, "2. Bias" = 0, "3. CIW" = 100, "4. Coverage" = 100, "5. MSE" = 0)
   p_list <- list()
   
   for (i in 1:5) {
@@ -214,12 +229,14 @@ build_sensitivity_plot <- function(res_df, color_var, xlab_str = "Matched Sample
       scale_color_gradient(low = "red", high = "gold", name = color_var) +
       theme_bw() +
       theme(
-        axis.text.x      = element_text(size = 11),
-        axis.text.y      = element_text(size = 12),
-        strip.text       = element_text(size = 12),
-        legend.text     = element_text(size = 11),
+        axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text.x = element_text(size = 11),
+        axis.text.y = element_text(size = 12),
+        strip.text = element_text(size = 14),
+        legend.text = element_text(size = 12),
         legend.title     = element_blank(),
-        legend.position  = "right"
+        legend.position = if (i == 5) "right" else "none"
       ) +
       scale_x_continuous(limits = c(160, 200)) +
       labs(y = if(i == 1) "Ratio (%)" else "", x = xlab_str)
@@ -232,7 +249,7 @@ build_sensitivity_plot <- function(res_df, color_var, xlab_str = "Matched Sample
     p_list[[i]] <- p
   }
   
-  wrap_plots(p_list, ncol = 5) + 
-    plot_layout(guides = "collect") + 
-    theme(legend.position = "right")
+  return(
+    wrap_plots(p_list, ncol = 5)
+  )
 }
