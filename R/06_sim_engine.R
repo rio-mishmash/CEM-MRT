@@ -200,6 +200,7 @@ aggregate_sim_results <- function(sim_raw) {
         MD_Ratio   = (mean(as.numeric(metrics[, "md"]), na.rm = TRUE) / (if(naive_md_base == 0) 1 else naive_md_base)) * 100,
         Bias_Ratio = (abs(mean(as.numeric(metrics[, "bias"]), na.rm = TRUE)) / (if(abs(naive_bias_base) == 0) 1 else abs(naive_bias_base))) * 100,
         CI_Ratio   = (mean(as.numeric(metrics[, "ci_width"]), na.rm = TRUE) / (if(naive_ci_base == 0) 1 else naive_ci_base)) * 100,
+        Coverage   =  mean(as.numeric(metrics[, "coverage"]), na.rm = TRUE) * 100,
         MSE_Ratio  = (mean(as.numeric(metrics[, "bias"])^2, na.rm = TRUE) / (if(naive_mse_base == 0) 1 else naive_mse_base)) * 100
       )
       idx <- idx + 1
@@ -388,6 +389,7 @@ run_sensitivity_simulation_block <- function(gen_func, fixed_t_n, param_grid = N
       MD_Ratio      = (mean(as.numeric(metrics[, "md"]), na.rm = TRUE) / (if(naive_md_base == 0) 1 else naive_md_base)) * 100,
       Bias_Ratio    = (abs(mean(as.numeric(metrics[, "bias"]), na.rm = TRUE)) / (if(abs(naive_bias_base) == 0) 1 else abs(naive_bias_base))) * 100,
       CI_Ratio      = (mean(as.numeric(metrics[, "ci_width"]), na.rm = TRUE) / (if(naive_ci_base == 0) 1 else naive_ci_base)) * 100,
+      Coverage      =  mean(as.numeric(metrics[, "coverage"]), na.rm = TRUE) * 100,
       MSE_Ratio     = (mean(as.numeric(metrics[, "bias"])^2, na.rm = TRUE) / (if(naive_mse_base == 0) 1 else naive_mse_base)) * 100
     )
   }
